@@ -2,8 +2,8 @@
 
 # declarations
 output_dir="dist"
-entry="client/src/Main.elm"
-js_out="client/$output_dir/main.js"
+entry="src/Main.elm"
+js_out="$output_dir/main.js"
 debug=false
 dist=false
 
@@ -21,9 +21,10 @@ done
 # markup and design
 cp src/index.html $output_dir/index.html
 cp src/index.css $output_dir/index.css
+cp src/audio.js $output_dir/audio.js
 
 # assets
-# cp -rf assets/ $output_dir/assets/
+cp -rf assets/ $output_dir/assets/
 
 # compile elm code
 if $debug; then

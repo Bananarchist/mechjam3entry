@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Main</title>
+    <link rel="stylesheet" href="index.css">
+    <script src="debug-main.js"></script>
+    <script src="audio.js"></script>
+  </head>
+  <body>
+    <main id="game">
+      <noscript>
+        <p>You will need to enable JavaScript to play this game.</p>
+      </noscript>
+      <button id=loadgamebtn>Load Game</button>
+    </main>
+    <script>
+      loadGameBtn = document.getElementById("loadgamebtn");
+      loadGameBtn.style.display="block";
+      const mountElm = () => {
+        const node = document.getElementById("game");
+        const flags = { width: document.body.clientWidth, height: document.body.clientHeight };
+        const app = Elm.Main.init({node, flags});
+        startAudio(app);
+      }
+      //loadGameBtn.addEventListener("click", function(e) {
+        mountElm();
+      //});
+    </script>
+  </body>
+</html>
