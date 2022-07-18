@@ -36,7 +36,8 @@ main =
 type Model
   = Title Config.Config Audio Video Clock
   | Menu Config.Config Audio Video Clock
-  | Options Config.Config Audio Video Clock
+  | Options Config.Config Audio Video Clock 
+  | OptionsUpdatingControl Config.Config Audio Video Clock Config.Control
   | Game Config.Config Audio Video Clock Game.Game
   | Credits Config.Config Audio Video Clock
 
@@ -46,6 +47,7 @@ mapModelConfig fn model =
     Title config a v c -> Title (fn config) a v c
     Menu config a v c -> Menu (fn config) a v c
     Options config a v c -> Options (fn config) a v c
+    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl (fn config) a v c control
     Game config a v c g -> Game (fn config) a v c g
     Credits config a v c -> Credits (fn config) a v c
 mapModelAudio fn model =
@@ -53,6 +55,7 @@ mapModelAudio fn model =
     Title config a v c -> Title config (fn a) v c
     Menu config a v c -> Menu config (fn a) v c
     Options config a v c -> Options config (fn a) v c
+    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config (fn a) v c control
     Game config a v c g -> Game config (fn a) v c g
     Credits config a v c -> Credits config (fn a) v c
 mapModelVideo fn model =
@@ -60,6 +63,7 @@ mapModelVideo fn model =
     Title config a v c -> Title config a (fn v) c
     Menu config a v c -> Menu config a (fn v) c
     Options config a v c -> Options config a (fn v) c
+    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config a (fn v) c control
     Game config a v c g -> Game config a (fn v) c g
     Credits config a v c -> Credits config a (fn v) c
 mapModelClock fn model =
@@ -67,6 +71,7 @@ mapModelClock fn model =
     Title config a v c -> Title config a v (fn c)
     Menu config a v c -> Menu config a v (fn c)
     Options config a v c -> Options config a v (fn c)
+    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config a v (fn c) control
     Game config a v c g -> Game config a v (fn c) g
     Credits config a v c -> Credits config a v (fn c)
 mapModelGame fn model =
@@ -79,6 +84,7 @@ getModelConfig model =
     Title c _ _ _ -> c
     Menu c _ _ _ -> c
     Options c _ _ _ -> c
+    OptionsUpdatingControl c _ _  _ _ -> c
     Game c _ _ _ _ -> c
     Credits c _ _ _ -> c
 getModelAudio model =
@@ -86,6 +92,7 @@ getModelAudio model =
     Title _ a _ _ -> a
     Menu _ a _ _ -> a
     Options _ a _ _ -> a
+    OptionsUpdatingControl _ a _ _ _ -> a
     Game _ a _ _ _ -> a
     Credits _ a _ _ -> a
 getModelVideo model =
@@ -93,6 +100,7 @@ getModelVideo model =
     Title _ _ v _ -> v
     Menu _ _ v _ -> v
     Options _ _ v _ -> v
+    OptionsUpdatingControl _ _ v _ _ -> v
     Game _ _ v _ _ -> v
     Credits _ _ v _ -> v
 getModelClock model =
@@ -100,12 +108,17 @@ getModelClock model =
     Title _ _ _ c -> c
     Menu _ _ _ c -> c
     Options _ _ _ c -> c
+    OptionsUpdatingControl _ _ _ c _ -> c
     Game _ _ _ c _ -> c
     Credits _ _ _ c -> c
 getModelGame model =
   case model of 
     Game _ _ _ _ g -> g
     _ -> Game.newGame (getModelConfig model) (Time.millisToPosix 0)
+getModelControlToUpdate model =
+  case model of
+    OptionsUpdatingControl _ _ _ _ control -> Just control
+    _ -> Nothing
 
 type alias Video =
   { width : Int
@@ -139,6 +152,12 @@ type Msg
   | ViewCredits
   | StartGame
   | ViewMainMenu
+  | UpdateConfig ConfigMsg
+  | KeyDown Key.Key
+  | KeyUp Key.Key
+
+type ConfigMsg
+  = ListenForKey Config.Control
 
 type VideoMsg 
   = SetWindowSize Int Int
@@ -213,6 +232,11 @@ update _ msg model =
       )
     UpdateVideoSystem vmsg -> 
       updateVideo vmsg model
+    UpdateConfig (ListenForKey control) ->
+      ( OptionsUpdatingControl (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model) (control)
+      , Cmd.none
+      , Audio.cmdNone
+      )
     SoundLoaded (Ok sound) ->
       ( model
         |> mapModelAudio (\a -> {a | music = Just sound})
@@ -231,6 +255,29 @@ update _ msg model =
       , Cmd.none
       , Audio.cmdNone
       )
+    KeyUp k ->
+      case model of 
+        Game _ _ _ _ _ ->
+          ( mapModelGame (Game.update (Game.KeyUp k)) model
+          , Cmd.none
+          , Audio.cmdNone
+          )
+        _ ->
+          (model, Cmd.none, Audio.cmdNone)
+    KeyDown k ->
+      case model of 
+        OptionsUpdatingControl config a v c control ->
+          ( Options (Config.updateControl control k config) a v c
+          , Cmd.none
+          , Audio.cmdNone
+          )
+        Game _ _ _ _ _ ->
+          ( mapModelGame (Game.update (Game.KeyDown k)) model
+          , Cmd.none
+          , Audio.cmdNone
+          )
+        _ ->
+          (model, Cmd.none, Audio.cmdNone)
     GameMessage (Game.ExitGame) ->
       ( Menu (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model)
       , Cmd.none
@@ -263,42 +310,50 @@ subscriptions _ _ =
     [ {-Browser.Events.onAnimationFrameDelta setFrameDelta
     , -}Browser.Events.onResize setWindowSize
     , Time.every 100 (Game.Tick >> GameMessage)
-    , Browser.Events.onKeyDown (Json.Decode.map (Game.KeyDown >> GameMessage) Key.decoder)
-    , Browser.Events.onKeyUp (Json.Decode.map (Game.KeyUp >> GameMessage) Key.decoder)
+    , Browser.Events.onKeyDown (Json.Decode.map KeyDown Key.decoder)
+    , Browser.Events.onKeyUp (Json.Decode.map KeyUp Key.decoder)
     ]
 
 view : Audio.AudioData -> Model -> Html.Html Msg
 view _ model =
-  let viewScreen = model |> getModelVideo |> video |> Html.main_
+  let viewScreen = model |> getModelVideo |> video |> (\attrs og -> Html.main_ (og ++ attrs))
   in
   case model of
     (Game _ _ _ _ _) as game -> 
       model
       |> getModelGame
       |> Game.view
-      |> viewScreen
+      |> viewScreen [ Hats.id "game" ]
       |> Html.map GameMessage
     (Title _ _ _ _) ->
-      viewScreen
+      viewScreen []
         [ Html.h1 [] [ Html.text "Salvatore's Bridge" ] ]
     (Credits _ _ _ _) ->
-      viewScreen
-        [ Html.h1 [] [ Html.text "Credits" ]
-        , Html.h2 [] [ Html.text "Programming, Writing, Graphics" ]
-        , Html.h3 [] [ Html.text "Zachariah" ]
+      viewScreen []
+        [ Html.h2 [] [ Html.text "Credits" ]
+        , Html.h3 [] [ Html.text "Programming, Writing, Graphics" ]
+        , Html.h4 [] [ Html.text "Zachariah" ]
         , Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ]
         ]
     (Menu _ _ _ _) ->
-      viewScreen
-        [ Html.h1 [] [ Html.text "Salvatore's Bridge" ]
-        , mainMenu 
-        ]
-    (Options conf _ _ _) ->
-      viewScreen
-        [ Html.h1 [] [ Html.text "Options" ]
-        , Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ]
-        ]
-
+      Html.h1 [] [ Html.text "Salvatore's Bridge" ]
+        :: mainMenu
+        |> viewScreen []
+    (Options config _ _ _) ->
+        [ Html.h2 [] [ Html.text "Options" ]
+        , Html.h3 [] [ Html.text "Controls" ]
+        ] 
+        ++ (controllerOptions config)
+        ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
+        |> viewScreen []
+    (OptionsUpdatingControl config _ _ _ control) ->
+      [ Html.h2 [] [ Html.text "Options" ]
+      , Html.h3 [] [ Html.text "Controls" ]
+      ]
+      ++ (controllerOptions config)
+      ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
+      ++ (controlOverlay control)
+      |> viewScreen []
 
 mainMenu = 
   [ ("New Game", StartGame)
@@ -306,12 +361,29 @@ mainMenu =
   , ("Credits", ViewCredits)
   ] 
   |> List.map (uncurry menuButton)
-  |> Html.ul []
 
 
 menuButton string msg =
-  Html.li []
-    [ Html.button 
-      [ Emits.onClick msg ]
-      [ Html.text string ]
-    ]
+  Html.button 
+    [ Emits.onClick msg ]
+    [ Html.text string ]
+
+controllerOption config k =
+  [ Html.text (Config.configNameForControl k)
+  , Html.text ": "
+  , Html.text (Config.keyFor k config |> KeyNames.keyNames)
+  , Html.button [ Emits.onClick (UpdateConfig <| ListenForKey k)] [ Html.text "edit" ]
+  ]
+
+controllerOptions config =
+  let 
+      controlMap : Config.Control -> List (Html.Html Msg) -> List (Html.Html Msg)
+      controlMap x acc=
+        Tuple.pair x acc 
+        |> Tuple.mapFirst (controllerOption config) 
+        |> uncurry (flip (++)) 
+  in
+  List.foldr controlMap [] Config.allControls
+
+controlOverlay control =
+  [ Html.div [ Hats.id "listening-overlay" ] [ "Press desired key for " ++ (Config.configNameForControl control) |> Html.text ] ]

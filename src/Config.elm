@@ -1,4 +1,4 @@
-module Config exposing (Config, newConfig, keyFor, matches, Control(..))
+module Config exposing (Config, newConfig, keyFor, matches, Control(..), allControls, updateControl, configNameForControl)
 
 import Key
 import Dict 
@@ -13,6 +13,14 @@ type Control
   | Place
   | Pause
 
+allControls =
+  [ MoveLeft
+  , MoveRight
+  , PickUp
+  , PutDown
+  , Place
+  , Pause
+  ]
 
 type Option
   = ControllerKey Control Key.Key
@@ -28,13 +36,7 @@ keyFor : Control -> Config -> Key.Key
 keyFor control config =
   let fetcher k = Dict.get k config |> Maybe.andThen controllerKey |> Maybe.withDefault (defaultKey control) 
   in
-  case control of
-    MoveLeft -> fetcher "moveLeft"
-    MoveRight -> fetcher "moveRight"
-    PickUp -> fetcher "pickUp"
-    PutDown -> fetcher "putDown"
-    Place -> fetcher "place"
-    Pause -> fetcher "pause"
+  configKeyForControl control |> fetcher
 
 
 defaultKey control = 
@@ -51,7 +53,42 @@ controllerKey option =
     ControllerKey c k -> Just k
     _ -> Nothing
 
+configKeyForControl control =
+  case control of
+    MoveLeft -> "moveLeft"
+    MoveRight -> "moveRight"
+    PickUp ->  "pickUp"
+    PutDown -> "putDown"
+    Place -> "place"
+    Pause -> "pause"
+
+configNameForControl control = 
+  case control of
+    MoveLeft -> "Move mech left"
+    MoveRight -> "Move mech right"
+    PickUp ->  "Pick up highlighted item"
+    PutDown -> "Put down held item"
+    Place -> "Place held item on bridge"
+    Pause -> "Pause game"
+
 
 matches : Control -> Key.Key -> Config -> Bool
 matches control key = keyFor control >> ((==) key) 
+
+anyUsingKey key config =
+  Dict.filter 
+    (\_ opt ->
+      case opt of
+        ControllerKey _ k -> if k == key then True else False
+        _ -> False
+    ) 
+    config
+    |> Dict.size
+    |> (<) 0
+
+updateControl control newKey config =
+  if not <| anyUsingKey newKey config then
+    Dict.insert (configKeyForControl control) (ControllerKey control newKey) config
+  else
+    config
 
