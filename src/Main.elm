@@ -342,15 +342,15 @@ view _ model =
     (Options config _ _ _) ->
         [ Html.h2 [] [ Html.text "Options" ]
         , Html.h3 [] [ Html.text "Controls" ]
-        ] 
-        ++ (controllerOptions config)
+        , (controllerOptions config)
+        ]
         ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
         |> viewScreen []
     (OptionsUpdatingControl config _ _ _ control) ->
       [ Html.h2 [] [ Html.text "Options" ]
       , Html.h3 [] [ Html.text "Controls" ]
+      , (controllerOptions config)
       ]
-      ++ (controllerOptions config)
       ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
       ++ (controlOverlay control)
       |> viewScreen []
@@ -369,10 +369,16 @@ menuButton string msg =
     [ Html.text string ]
 
 controllerOption config k =
-  [ Html.text (Config.configNameForControl k)
-  , Html.text ": "
-  , Html.text (Config.keyFor k config |> KeyNames.keyNames)
-  , Html.button [ Emits.onClick (UpdateConfig <| ListenForKey k)] [ Html.text "edit" ]
+  [ Html.dl [ Hats.class "controller-row" ]
+    [ Html.dt  []
+      [ Html.text (Config.configNameForControl k)
+      , Html.text ": "
+      ]
+      , Html.dd [] 
+        [ Html.text (Config.keyFor k config |> KeyNames.keyNames)
+        , Html.button [ Emits.onClick (UpdateConfig <| ListenForKey k)] [ Html.text "edit" ]
+        ]
+    ]
   ]
 
 controllerOptions config =
@@ -384,6 +390,7 @@ controllerOptions config =
         |> uncurry (flip (++)) 
   in
   List.foldr controlMap [] Config.allControls
+  |> Html.section [ Hats.class "controls" ]
 
 controlOverlay control =
   [ Html.div [ Hats.id "listening-overlay" ] [ "Press desired key for " ++ (Config.configNameForControl control) |> Html.text ] ]
