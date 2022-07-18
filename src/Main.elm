@@ -329,7 +329,7 @@ view _ model =
       viewScreen []
         [ Html.h1 [] [ Html.text "Salvatore's Bridge" ] ]
     (Credits _ _ _ _) ->
-      viewScreen []
+      viewScreen [ Hats.id "credits" ]
         [ Html.h2 [] [ Html.text "Credits" ]
         , Html.h3 [] [ Html.text "Programming, Writing, Graphics" ]
         , Html.h4 [] [ Html.text "Zachariah" ]
@@ -338,14 +338,13 @@ view _ model =
     (Menu _ _ _ _) ->
       Html.h1 [] [ Html.text "Salvatore's Bridge" ]
         :: mainMenu
-        |> viewScreen []
+        |> viewScreen [ Hats.id "main-menu" ]
     (Options config _ _ _) ->
-        [ Html.h2 [] [ Html.text "Options" ]
-        , Html.h3 [] [ Html.text "Controls" ]
-        , (controllerOptions config)
-        ]
-        ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
-        |> viewScreen []
+      [ Html.h2 [] [ Html.text "Options" ]
+      , (controllerOptions config)
+      ]
+      ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
+      |> viewScreen [ Hats.id "options" ]
     (OptionsUpdatingControl config _ _ _ control) ->
       [ Html.h2 [] [ Html.text "Options" ]
       , Html.h3 [] [ Html.text "Controls" ]
@@ -353,7 +352,7 @@ view _ model =
       ]
       ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
       ++ (controlOverlay control)
-      |> viewScreen []
+      |> viewScreen [ Hats.id "options" ]
 
 mainMenu = 
   [ ("New Game", StartGame)
@@ -389,7 +388,8 @@ controllerOptions config =
         |> Tuple.mapFirst (controllerOption config) 
         |> uncurry (flip (++)) 
   in
-  List.foldr controlMap [] Config.allControls
+  List.foldl controlMap [] Config.allControls
+  |> (++) [ Html.h3 [] [ Html.text "Controls" ] ]
   |> Html.section [ Hats.class "controls" ]
 
 controlOverlay control =
