@@ -1,4 +1,4 @@
-module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight)
+module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight, distantBg, crashingWaveSprite)
 
 import Basics.Extra exposing (flip, uncurry)
 import Dict
@@ -132,6 +132,7 @@ withSendMessageBtn msg label list =
 bgWidth = 750
 bgHeight = 400
 bg = viewSprite (Box (410, 160) (bgWidth, bgHeight)) []
+distantBg = viewSpriteWithAttrs [ Hats.style "opacity" "0.3" ] (Box (1078, 663) (bgWidth, bgHeight)) [Translated (0, 40)]
 
 
 mechStandBox = Box (586, 743) (85, 178)
@@ -168,6 +169,11 @@ waveSprite magnification crashing =
     viewSprite waveCrashingBox []
   else
     viewSprite waveBox [Translated (0,200), Scaled (magnification, magnification)]
+
+crashingWaveSprite value =
+  let scale = (abs value + 1)
+  in
+  [ viewSprite waveBox [Translated (0, 200 + (abs value * 200)), Scaled (scale, scale)]]
 
 backTide level =
   let fill = level / 10

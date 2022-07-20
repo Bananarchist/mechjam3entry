@@ -1,10 +1,11 @@
-module Game exposing (Game, newGame, view, Msg(..), update)
+module Game exposing (Game, newGame, view, Msg(..), update, AudioSignal(..), audioSignals)
 
 import Basics.Extra exposing (flip)
 import Bridge
 import Config 
 import GFXAsset
 import Html
+import Html.Attributes as Hats
 import Key
 import Lemmings
 import Mech
@@ -18,6 +19,7 @@ type Msg
   | StartGame
   | RestartGame
   | ExitGame
+  | GotLemmingValue (List Float)
 
 
 type alias State =
@@ -27,9 +29,27 @@ type alias State =
   , lastTick : Time.Posix
   , ocean : Ocean.Ocean
   , lemmings : List Lemmings.Lemming
+  , lemmingRandomValues : List Float
+  , audio : List AudioSignal
   }
 
-newState time = State Mech.newMech Bridge.newBridge newScore time Ocean.new Lemmings.newPopulation
+newState : Time.Posix -> State
+newState time = 
+  State Mech.newMech Bridge.newBridge newScore time Ocean.new Lemmings.newPopulation [] []
+
+newStateWithPreservedLvals time lvals =
+  newState time
+  |> (\s -> { s | lemmingRandomValues = lvals })
+  |> applyRandomValuesTo
+
+applyRandomValuesTo state =
+  let (remaining, lemmings) = Lemmings.mapRandomValues state.lemmings state.lemmingRandomValues
+  in
+  { state
+  | lemmings = lemmings
+  , lemmingRandomValues = remaining
+  }
+
 
 type Phase
   = Introduction
@@ -42,6 +62,13 @@ type GameResult
   | SavedPeople Score
   | Died Score
   | Lost
+
+type AudioSignal 
+  = StartMusic
+  | PauseMusic
+
+startMusic state = 
+  { state | audio = StartMusic :: state.audio }
 
 type Score = Score Float
 
@@ -57,10 +84,45 @@ losingScore (Score x) = x < 0
 
 type Game
   = Game Config.Config Phase State (Maybe Debugger)
+  | Paused Game
 
-newGame config time = Game config Introduction (newState time) Nothing
-updateState updater (Game config phase state maybeDebugger) = Game config phase (updater state) maybeDebugger
-mapPhase updater (Game config phase state maybeDebugger) = Game config (updater phase) state maybeDebugger
+newGame time config = Game config Introduction (newState time) Nothing
+unpause game =
+  case game of
+    Paused g -> unpause g
+    _ -> game
+isPaused game =
+  case game of
+    Paused _ -> True
+    _ -> False
+updateState updater game = 
+  case game of 
+    Game config phase state maybeDebugger -> 
+      Game config phase (updater state) maybeDebugger
+    g -> unpause g |> updateState updater |> Paused
+mapPhase updater game = 
+  case game of 
+    Game config phase state maybeDebugger -> 
+      Game config (updater phase) state maybeDebugger
+    _ -> game
+gameConfig game =
+  case game of
+    Game config _ _ _ -> config
+    Paused g -> gameConfig g
+gamePhase game =
+  case game of
+    Game _ phase _ _ -> phase
+    Paused g -> gamePhase g
+gameState game =
+  case game of
+    Game _ _ state _ -> state
+    Paused g -> gameState g
+gameDebugger game =
+  case game of
+    Game _ _ _ maybeDebugger -> maybeDebugger
+    Paused g -> gameDebugger g
+audioSignals =
+  gameState >> .audio
 
 introTide = 0
 
@@ -80,12 +142,150 @@ scoreDepletionRate ({start,mid,end}, (Score s)) =
   |> (*) 0.0125
 
 
+gameResult game =
+  let
+      config = gameConfig game
+      phase = gamePhase game
+      ({mech, bridge, lastTick, score, ocean, lemmings} as state) = gameState game
+      maybeDebugger = gameDebugger game
+  in
+  case phase of
+    Play -> 
+      if Bridge.complete bridge && (not <| Lemmings.anyLeftToRescue lemmings) then
+        if Mech.xPos mech >= 400 then
+          Just (CompleteVictory score) |> Debug.log "Complete victory"
+        else
+          Just (SavedPeople score)|> Debug.log "saved people"
+      else if Ocean.highTide ocean then
+        Just (Died score)|> Debug.log "high tide"
+      else if Mech.hasDrowned mech then
+        Just (Died (Score 1))|> Debug.log "has drowned"
+      else if Mech.hasBeenStruck mech then
+        Just (Died (Score 1))|> Debug.log "has been struck"
+      else
+        Nothing
+    _ -> Nothing
+
+updateIfGameOver game =
+  let
+      config = gameConfig game
+      phase = gamePhase game
+      state = gameState game
+      maybeDebugger = gameDebugger game
+  in
+  gameResult game
+  |> Maybe.map (\r -> (Game config (Ending r) state maybeDebugger))
+  |> Maybe.withDefault game
+
+finishedWithIntro game =
+  case game of
+    Paused g -> finishedWithIntro g
+    Game c Introduction s dbg -> Game c Play s dbg
+    _ -> game
+
+update : Msg -> Game -> Game
+update msg game =
+  let
+      config = gameConfig game
+      phase = gamePhase game
+      ({mech, bridge, lastTick, score, ocean, lemmings} as state) = gameState game
+      maybeDebugger = gameDebugger game
+  in
+  case (msg, isPaused game) of
+    (GotLemmingValue lvals, _) ->
+      updateState (\s -> 
+        { s 
+        | lemmingRandomValues = s.lemmingRandomValues ++ lvals 
+        }
+        |> applyRandomValuesTo) game
+    (ExitGame, _) ->
+      game
+    (StartGame, _) ->
+      finishedWithIntro game
+    (RestartGame, _) ->
+      game
+      --Game config Play (newState lastTick |> startMusic) maybeDebugger
+    (KeyUp _, False) -> 
+      if (Mech.velocity mech) /= 0 then
+        updateState (\s -> {s | mech = Mech.setVelocity 0 mech }) game
+      else
+        game
+    (KeyDown key, False) ->
+      if Config.matches Config.Pause key config then
+        Paused game
+      else
+        case (Config.matches Config.MoveLeft key config, Config.matches Config.MoveRight key config) of
+          (True, _) ->
+            updateState (\s -> {s | mech = mech |> Mech.setVelocity 1 |> Mech.setLeftFacing True}) game
+          (_, True) -> 
+            updateState (\s -> {s | mech = mech |> Mech.setVelocity 1 |> Mech.setLeftFacing False}) game
+          _ ->
+            case (Config.matches Config.PickUp key config
+                  , Config.matches Config.PutDown key config
+                  , Config.matches Config.Place key config) of
+              (True, _, _) ->
+                bridge
+                |> Bridge.liftBridgeSegment 
+                  (Mech.xPos mech)
+                  (\b -> updateState (\s -> { s | mech = mech |> Mech.startLifting, bridge = b}) game)
+                |> Maybe.withDefault game
+              (_, True, _) -> 
+                updateState (\s -> {s | bridge = Bridge.dropBridgeSegment bridge }) game
+              (_, _, True) -> 
+                updateState (\s -> {s | bridge = Bridge.placeBridgeSegment bridge }) game
+              _ -> 
+                game
+    (KeyDown key, True) ->
+      if Config.matches Config.Pause key config then
+        unpause game
+      else
+        game
+    (Tick tock, False) ->
+        let newAudioSignals = audioSignals game
+        in
+      case phase of
+        Play ->
+          let delta = (Time.posixToMillis tock) - (Time.posixToMillis lastTick) |> toFloat
+              updatedMech = Mech.update state delta
+              updatedBridge = Bridge.update (Mech.xPos updatedMech) delta bridge 
+              updatedOcean = Ocean.update delta ocean
+              newStateFn s = 
+                { s 
+                  | lastTick = tock
+                  , mech = updatedMech
+                  , bridge = updatedBridge
+                  , ocean = updatedOcean
+                  , lemmings = Lemmings.update updatedBridge updatedOcean delta lemmings
+                  , audio = newAudioSignals
+                }
+              newGameModel = 
+                updateState newStateFn game
+          in
+          if lastTick == (Time.millisToPosix 0) then
+            updateState (\s -> { s | lastTick = tock}) game
+          else 
+            updateIfGameOver newGameModel
+        _ ->
+          updateState (\s -> { s | lastTick = tock, audio = newAudioSignals}) game
+    (Tick tock, True) ->
+          updateState (\s -> { s | lastTick = tock}) game
+    (_, _) -> game
+          
+
+
 -- views
 
 background = GFXAsset.bg
 
 view : Game -> List (Html.Html Msg)
-view ((Game config phase {mech, bridge, lastTick, score, ocean, lemmings} maybeDebugger) as game) =
+view game =
+  let
+      config = gameConfig game
+      phase = gamePhase game
+      {mech, bridge, lastTick, score, ocean, lemmings} = gameState game
+      maybeDebugger = gameDebugger game
+      pauseOverlay = if isPaused game then [ Html.div [ Hats.id "paused-overlay" ] [ Html.text "Game paused" ] ] else []
+  in
   case phase of
     Introduction -> 
       [ "The storm was worse than anyone had predicted and made landfall almost a month ahead of hurricane season."
@@ -129,100 +329,16 @@ view ((Game config phase {mech, bridge, lastTick, score, ocean, lemmings} maybeD
           |> GFXAsset.withSendMessageBtn (RestartGame) "Try Again"
           |> GFXAsset.withSendMessageBtn (ExitGame) "Game Over"
     _ -> 
-      [ Ocean.viewBackTide ocean
-      , Ocean.viewWave ocean
-      , GFXAsset.bg
+      [ GFXAsset.distantBg
+      , Ocean.viewBackTide ocean
+      , Ocean.viewComingWave ocean
       ]
+      ++ Bridge.viewPlaced bridge
       ++ Lemmings.view lemmings
+      ++ [ GFXAsset.bg ]
       ++ Bridge.view bridge
       ++ [ Mech.view mech ]
+      ++ Ocean.viewCrashingWave ocean
       ++ [ Ocean.viewFrontTide ocean ]
-
-gameResult (Game _ phase ({mech,bridge,score,ocean,lemmings} as state) _) =
-  case phase of
-    Play -> 
-      if Bridge.complete bridge && (not <| Lemmings.anyLeftToRescue lemmings) then
-        if Mech.xPos mech >= 400 then
-          Just (CompleteVictory score) |> Debug.log "Complete victory"
-        else
-          Just (SavedPeople score)|> Debug.log "saved people"
-      else if Ocean.highTide ocean then
-        Just (Died score)|> Debug.log "high tide"
-      else if Mech.hasDrowned mech then
-        Just (Died (Score 1))|> Debug.log "has drowned"
-      else if Mech.hasBeenStruck mech then
-        Just (Died (Score 1))|> Debug.log "has been struck"
-      else
-        Nothing
-    _ -> Nothing
-
-updateIfGameOver ((Game config phase state maybeDebugger) as game) =
-  gameResult game
-  |> Maybe.map (\r -> (Game config (Ending r) state maybeDebugger))
-  |> Maybe.withDefault game
-
-
-
-update : Msg -> Game -> Game
-update msg ((Game config phase ({mech, bridge, score, lastTick, ocean, lemmings} as state) maybeDebugger) as game) =
-  case msg of
-    ExitGame ->
-      game
-    StartGame ->
-      Game config Play (newState lastTick) maybeDebugger
-    RestartGame ->
-      Game config Play (newState lastTick) maybeDebugger
-    KeyUp _ -> 
-      if (Mech.velocity mech) /= 0 then
-        updateState (\s -> {s | mech = Mech.setVelocity 0 mech }) game
-      else
-        game
-    KeyDown key ->
-      case (Config.matches Config.MoveLeft key config, Config.matches Config.MoveRight key config) of
-        (True, _) ->
-          updateState (\s -> {s | mech = mech |> Mech.setVelocity 1 |> Mech.setLeftFacing True}) game
-        (_, True) -> 
-          updateState (\s -> {s | mech = mech |> Mech.setVelocity 1 |> Mech.setLeftFacing False}) game
-        _ ->
-          case (Config.matches Config.PickUp key config
-                , Config.matches Config.PutDown key config
-                , Config.matches Config.Place key config) of
-            (True, _, _) ->
-              bridge
-              |> Bridge.liftBridgeSegment 
-                (Mech.xPos mech)
-                (\b -> updateState (\s -> { s | mech = mech |> Mech.startLifting, bridge = b}) game)
-              |> Maybe.withDefault game
-            (_, True, _) -> 
-              updateState (\s -> {s | bridge = Bridge.dropBridgeSegment bridge }) game
-            (_, _, True) -> 
-              updateState (\s -> {s | bridge = Bridge.placeBridgeSegment bridge }) game
-            _ -> 
-              game
-    Tick tock ->
-      case phase of
-        Play ->
-          let delta = (Time.posixToMillis tock) - (Time.posixToMillis state.lastTick) |> toFloat
-              updatedMech = Mech.update state delta
-              updatedBridge = Bridge.update (Mech.xPos updatedMech) delta bridge 
-              updatedOcean = Ocean.update delta ocean
-              newStateFn s = 
-                { s 
-                  | lastTick = tock
-                  , mech = updatedMech
-                  , bridge = updatedBridge
-                  , ocean = updatedOcean
-                  , lemmings = Lemmings.update updatedBridge updatedOcean delta lemmings
-                }
-              newGameModel = 
-                updateState newStateFn game
-          in
-          if lastTick == (Time.millisToPosix 0) then
-            updateState (\s -> { s | lastTick = tock}) game
-          else 
-            updateIfGameOver newGameModel
-        _ ->
-          updateState (\s -> { s | lastTick = tock}) game
-          
-
+      ++ pauseOverlay
 

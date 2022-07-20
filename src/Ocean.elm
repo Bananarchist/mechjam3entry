@@ -1,4 +1,4 @@
-module Ocean exposing (Tide, Wave, update, newTide, newWave, highTide, tidalValue, viewFrontTide, viewBackTide, viewWave, waveValue, new, Ocean, waveSurfaceDangerZone, isWaveCrashing, waveBridgeDangerZone, tidalDangerZone, oceanWave)
+module Ocean exposing (Tide, Wave, update, newTide, newWave, highTide, tidalValue, viewFrontTide, viewBackTide, viewComingWave, viewCrashingWave, waveValue, new, Ocean, waveSurfaceDangerZone, isWaveCrashing, waveBridgeDangerZone, tidalDangerZone, oceanWave)
 
 import Basics.Extra exposing (flip, uncurry)
 import GFXAsset
@@ -68,8 +68,12 @@ viewFrontTide =
 viewBackTide =
   oceanTide >> tidalValue >> GFXAsset.backTide
 
-viewWave ocean =
-  (ocean, ocean) 
-  |> Tuple.mapBoth (oceanWave >> waveValue >> (+) 1 >> (/) 1) isWaveCrashing
-  |> uncurry GFXAsset.waveSprite 
+viewComingWave ocean =
+  GFXAsset.waveSprite (ocean |> oceanWave |> waveValue |> (+) 1 |> (/) 1) (isWaveCrashing ocean)
 
+
+viewCrashingWave ocean =
+  if isWaveCrashing ocean then
+    GFXAsset.crashingWaveSprite (ocean |> oceanWave |> waveValue)
+  else
+    []

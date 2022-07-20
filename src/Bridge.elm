@@ -1,4 +1,4 @@
-module Bridge exposing (Bridge, newBridge, Segment(..), view, xPos, yPos, angle, length, segmentList, liftBridgeSegment, update, dropBridgeSegment, placeBridgeSegment, placeOpen, placeable, complete, terminus, anyHeld)
+module Bridge exposing (Bridge, newBridge, Segment(..), view, xPos, yPos, angle, length, segmentList, liftBridgeSegment, update, dropBridgeSegment, placeBridgeSegment, placeOpen, placeable, complete, terminus, anyHeld, viewPlaced)
 
 import Basics.Extra exposing (flip, uncurry)
 import GFXAsset
@@ -28,6 +28,7 @@ type Segment
 newBridge = Bridge (Stray (0,320) (degrees -120)) (Stray (560,300) (degrees -45)) (Stray (20,280) (degrees -160))
 
 length = 119
+bridgeStart = 171
 
 segmentList : Bridge -> List Segment
 segmentList {seg1, seg2, seg3} =
@@ -87,7 +88,7 @@ terminus bridge =
   |> List.Extra.takeWhile (not << placeOpen bridge)
   |> List.length
   |> (*) length
-  |> (+) 175
+  |> (+) bridgeStart
   |> toFloat
 
 placeOpen bridge idx =
@@ -133,14 +134,14 @@ placeable bridge segment =
     _ -> False
 
 bridgeCoordsForIndex idx =
-  (175 + idx * length, 180)
+  (bridgeStart + idx * length, 180)
 
 bridgeIndexForX x =
-  if Misc.within 175 (175 + length) x then
+  if Misc.within bridgeStart (bridgeStart + length) x then
     Just 0
-  else if Misc.within (175 + length) (175 + length * 2) x then
+  else if Misc.within (bridgeStart + length) (bridgeStart + length * 2) x then
     Just 1
-  else if Misc.within (175 + length * 2) (175 + length * 3) x then 
+  else if Misc.within (bridgeStart + length * 2) (bridgeStart + length * 3) x then 
     Just 2
   else
     Nothing
@@ -206,7 +207,7 @@ coords =
 
 xPos segment = 
   case segment of
-    Placed x -> 175 + (x |> toFloat) * length
+    Placed x -> bridgeStart + (x |> toFloat) * length
     Held x _ -> x
     Stray (x,_) _ -> x
     Liftable (x,_) _ -> x
@@ -304,5 +305,10 @@ viewSegment segment =
 
 view =
   segmentList
+  >> List.filter (not << isPlaced)
   >> List.map viewSegment
 
+viewPlaced =
+  segmentList
+  >> List.filter isPlaced
+  >> List.map viewSegment

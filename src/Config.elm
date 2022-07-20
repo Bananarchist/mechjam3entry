@@ -1,4 +1,4 @@
-module Config exposing (Config, newConfig, keyFor, matches, Control(..), allControls, updateControl, configNameForControl)
+module Config exposing (Config, newConfig, keyFor, matches, Control(..), allControls, updateControl, nameForControl, sfxVolume, setSFXVolume, musicVolume, setMusicVolume)
 
 import Key
 import Dict 
@@ -36,7 +36,7 @@ keyFor : Control -> Config -> Key.Key
 keyFor control config =
   let fetcher k = Dict.get k config |> Maybe.andThen controllerKey |> Maybe.withDefault (defaultKey control) 
   in
-  configKeyForControl control |> fetcher
+  keyForControl control |> fetcher
 
 
 defaultKey control = 
@@ -53,7 +53,7 @@ controllerKey option =
     ControllerKey c k -> Just k
     _ -> Nothing
 
-configKeyForControl control =
+keyForControl control =
   case control of
     MoveLeft -> "moveLeft"
     MoveRight -> "moveRight"
@@ -62,7 +62,7 @@ configKeyForControl control =
     Place -> "place"
     Pause -> "pause"
 
-configNameForControl control = 
+nameForControl control = 
   case control of
     MoveLeft -> "Move mech left"
     MoveRight -> "Move mech right"
@@ -88,7 +88,26 @@ anyUsingKey key config =
 
 updateControl control newKey config =
   if not <| anyUsingKey newKey config then
-    Dict.insert (configKeyForControl control) (ControllerKey control newKey) config
+    Dict.insert (keyForControl control) (ControllerKey control newKey) config
   else
     config
+
+defaultMusicVolume = 0.5
+musicVolumeKey = "musicVolume"
+musicVolume = Dict.get musicVolumeKey >> Maybe.map musicVolumeValue >> Maybe.withDefault defaultMusicVolume 
+setMusicVolume = MusicVolume >> Dict.insert musicVolumeKey
+musicVolumeValue opt =
+  case opt of
+    MusicVolume f -> f
+    _ -> defaultMusicVolume
+
+defaultSFXVolume = 0.5
+sfxVolumeKey = "sfxVolume"
+sfxVolume = Dict.get sfxVolumeKey >> Maybe.map sfxVolumeValue >> Maybe.withDefault defaultSFXVolume
+setSFXVolume = SFXVolume >> Dict.insert sfxVolumeKey
+sfxVolumeValue opt =
+  case opt of
+    SFXVolume f -> f
+    _ -> defaultSFXVolume
+
 

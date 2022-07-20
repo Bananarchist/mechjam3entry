@@ -136,7 +136,7 @@ update {mech, bridge, ocean} delta =
     (toFloat v) / 15.0 * delta 
     |> (*) (mech |> isFacingLeft |> velocitySign)
     |> (+) (mech |> xPos)
-    |> clamp 0 560
+    |> clamp 0 610
     |> flip setX mech
   else
     let rm = (remainingMillis mech) - (floor delta)

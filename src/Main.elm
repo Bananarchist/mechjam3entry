@@ -1,11 +1,12 @@
 port module Main exposing (main)
 
 import Audio
-import Basics.Extra exposing (flip, uncurry)
+import Basics.Extra exposing (flip, uncurry, curry)
 import Browser
 import Browser.Events
 import Browser.Dom
 import Config
+import Duration
 import Game
 import GFXAsset
 import Html
@@ -15,13 +16,15 @@ import Json.Decode
 import Json.Encode
 import Key
 import KeyNames exposing (keyNames)
+import Lemmings
+import Random
 import Task
 import Time
 
 port audioPortToJS : Json.Encode.Value -> Cmd msg
 port audioPortFromJS : (Json.Decode.Value -> msg) -> Sub msg
 
-main : Platform.Program () (Audio.Model Msg Model) (Audio.Msg Msg)
+main : Platform.Program () (Audio.Model Msg App) (Audio.Msg Msg)
 main = 
   Audio.elementWithAudio
   --Browser.element
@@ -33,91 +36,84 @@ main =
     , audioPort = { toJS = audioPortToJS, fromJS = audioPortFromJS }
     }
 
-type Model
-  = Title Config.Config Audio Video Clock
-  | Menu Config.Config Audio Video Clock
-  | Options Config.Config Audio Video Clock 
-  | OptionsUpdatingControl Config.Config Audio Video Clock Config.Control
-  | Game Config.Config Audio Video Clock Game.Game
-  | Credits Config.Config Audio Video Clock
+type App
+  = Title Model
+  | Menu Model
+  | Options Model
+  | OptionsUpdatingControl Model Config.Control
+  | Game Model Game.Game
+  | Credits Model
 
+type alias Model =
+  { config : Config.Config
+  , audio : Audio
+  , video : Video
+  , clock : Clock
+  , random : List Float
+  }
 
-mapModelConfig fn model =
-  case model of 
-    Title config a v c -> Title (fn config) a v c
-    Menu config a v c -> Menu (fn config) a v c
-    Options config a v c -> Options (fn config) a v c
-    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl (fn config) a v c control
-    Game config a v c g -> Game (fn config) a v c g
-    Credits config a v c -> Credits (fn config) a v c
-mapModelAudio fn model =
-  case model of 
-    Title config a v c -> Title config (fn a) v c
-    Menu config a v c -> Menu config (fn a) v c
-    Options config a v c -> Options config (fn a) v c
-    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config (fn a) v c control
-    Game config a v c g -> Game config (fn a) v c g
-    Credits config a v c -> Credits config (fn a) v c
-mapModelVideo fn model =
-  case model of 
-    Title config a v c -> Title config a (fn v) c
-    Menu config a v c -> Menu config a (fn v) c
-    Options config a v c -> Options config a (fn v) c
-    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config a (fn v) c control
-    Game config a v c g -> Game config a (fn v) c g
-    Credits config a v c -> Credits config a (fn v) c
-mapModelClock fn model =
-  case model of 
-    Title config a v c -> Title config a v (fn c)
-    Menu config a v c -> Menu config a v (fn c)
-    Options config a v c -> Options config a v (fn c)
-    OptionsUpdatingControl config a v c control -> OptionsUpdatingControl config a v (fn c) control
-    Game config a v c g -> Game config a v (fn c) g
-    Credits config a v c -> Credits config a v (fn c)
-mapModelGame fn model =
-  case model of 
-    Game config a v c g -> Game config a v c (fn g)
-    _ -> model
+newModel =
+  { config = Config.newConfig
+  , audio = newAudio
+  , video = Video 0 0 0.0
+  , clock = newClock
+  , random = []
+  }
+  --Title Config.Config Audio Video Clock
+  --Menu Config.newConfig newAudio (Video 0 0 0.0) newClock
+  --Options Config.Config Audio Video Clock
+  -- Game Config.newConfig newAudio (Video 0 0 0.0) (newClock) (Game.newGame Config.newConfig (Time.millisToPosix 0))
+  --Credits Config.Config Audio Video Clock
+appModel app =
+  case app of
+    Title m -> m
+    Menu m -> m
+    Options m -> m
+    OptionsUpdatingControl m _ -> m
+    Game m _ -> m
+    Credits m -> m
+
+mapModel mapper app =
+  case app of
+    Title m -> m |> mapper |> Title
+    Menu m -> m |> mapper |> Menu
+    Options m -> m |> mapper |> Options
+    OptionsUpdatingControl m c -> m |> mapper |> flip OptionsUpdatingControl c
+    Game m g -> m |> mapper |> flip Game g
+    Credits m -> m |> mapper |> Credits
+
+mapAppConfig fn =
+  mapModel (\m -> { m | config = fn m.config })
+mapAppAudio fn =
+  mapModel (\m -> { m | audio = fn m.audio })
+mapAppVideo fn =
+  mapModel (\m -> { m | video = fn m.video })
+mapAppClock fn =
+  mapModel (\m -> { m | clock = fn m.clock })
+mapAppRandom fn =
+  mapModel (\m -> { m | random = fn m.random })
+mapAppGame fn app =
+  case app of 
+    Game m g -> Game m (fn g)
+    _ -> app
     
-getModelConfig model =
-  case model of 
-    Title c _ _ _ -> c
-    Menu c _ _ _ -> c
-    Options c _ _ _ -> c
-    OptionsUpdatingControl c _ _  _ _ -> c
-    Game c _ _ _ _ -> c
-    Credits c _ _ _ -> c
-getModelAudio model =
-  case model of 
-    Title _ a _ _ -> a
-    Menu _ a _ _ -> a
-    Options _ a _ _ -> a
-    OptionsUpdatingControl _ a _ _ _ -> a
-    Game _ a _ _ _ -> a
-    Credits _ a _ _ -> a
-getModelVideo model =
-  case model of 
-    Title _ _ v _ -> v
-    Menu _ _ v _ -> v
-    Options _ _ v _ -> v
-    OptionsUpdatingControl _ _ v _ _ -> v
-    Game _ _ v _ _ -> v
-    Credits _ _ v _ -> v
-getModelClock model =
-  case model of 
-    Title _ _ _ c -> c
-    Menu _ _ _ c -> c
-    Options _ _ _ c -> c
-    OptionsUpdatingControl _ _ _ c _ -> c
-    Game _ _ _ c _ -> c
-    Credits _ _ _ c -> c
-getModelGame model =
-  case model of 
-    Game _ _ _ _ g -> g
-    _ -> Game.newGame (getModelConfig model) (Time.millisToPosix 0)
-getModelControlToUpdate model =
+getAppConfig =
+  appModel >> .config
+getAppAudio =
+  appModel >> .audio
+getAppVideo =
+  appModel >> .video
+getAppClock =
+  appModel >> .clock
+getAppRandom =
+  appModel >> .random
+getAppGame app =
+  case app of 
+    Game _ g -> Just g
+    _ -> Nothing
+getAppControlToUpdate model =
   case model of
-    OptionsUpdatingControl _ _ _ _ control -> Just control
+    OptionsUpdatingControl _ control -> Just control
     _ -> Nothing
 
 type alias Video =
@@ -130,9 +126,14 @@ type alias Audio =
   { music : Maybe Audio.Source
   , musicStartTime : Time.Posix
   , soundOn : Bool
+  , dropSfx : Maybe Audio.Source
+  , sfx :  List (SoundEffect, Time.Posix)
   }
 
-newAudio = Audio Nothing (Time.millisToPosix 0) True
+type SoundEffect
+  = DropSound
+
+newAudio = Audio Nothing (Time.millisToPosix 0) True Nothing []
 
 type Clock = Clock Time.Posix
 newClock = Clock <| Time.millisToPosix 0
@@ -155,9 +156,12 @@ type Msg
   | UpdateConfig ConfigMsg
   | KeyDown Key.Key
   | KeyUp Key.Key
+  | NewLemmingValues (List Float)
 
 type ConfigMsg
   = ListenForKey Config.Control
+  | SetMusicVolume Float
+  | SetSFXVolume Float
 
 type VideoMsg 
   = SetWindowSize Int Int
@@ -167,10 +171,31 @@ setWindowSize w h = UpdateVideoSystem <| SetWindowSize w h
 setFrameDelta = UpdateVideoSystem << SetFrameDelta
 
 
-audio : Audio.AudioData -> Model -> Audio.Audio
-audio _ model =
-  Maybe.map (flip Audio.audio (getModelClock model |> clockValue)) (getModelAudio model |> .music)
-  |> Maybe.withDefault Audio.silence
+audio : Audio.AudioData -> App -> Audio.Audio
+audio _ app =
+  case app of 
+    Game state g ->
+      flip List.map (Game.audioSignals g) 
+        (\s ->
+          case s of
+            Game.StartMusic -> 
+              Maybe.map (flip Audio.audio (getAppClock app |> clockValue)) (getAppAudio app |> .music)
+              |> Maybe.map (Audio.scaleVolume (getAppConfig app |> Config.musicVolume))
+              |> Maybe.withDefault Audio.silence
+            _ -> Audio.silence
+        )
+        |> Audio.group
+    _ ->
+      flip List.map (getAppAudio app |> .sfx) (\(sfx, _) ->
+        case sfx of
+          DropSound -> 
+              Maybe.map (flip Audio.audio (getAppClock app |> clockValue)) (getAppAudio app |> .dropSfx)
+              |> Maybe.map (Audio.scaleVolume (getAppConfig app |> Config.sfxVolume))
+              |> Maybe.withDefault Audio.silence
+      )
+      |> Audio.group
+
+    
 
 video : Video -> List (Html.Attribute msg)
 video {width,height} =
@@ -184,18 +209,21 @@ video {width,height} =
   , Hats.style "transform-origin" "center top"
   ]
 
-newModel =
+newApp =
   --Title Config.Config Audio Video Clock
-  Menu Config.newConfig newAudio (Video 0 0 0.0) newClock
+  Menu newModel
   --Options Config.Config Audio Video Clock
   -- Game Config.newConfig newAudio (Video 0 0 0.0) (newClock) (Game.newGame Config.newConfig (Time.millisToPosix 0))
   --Credits Config.Config Audio Video Clock
 
-init : () -> (Model, Cmd Msg, Audio.AudioCmd Msg)
+generateLemmingValues = 
+  [ (NewLemmingValues, Random.list 100 (Random.float 0 100))
+  ]
+
+init : () -> (App, Cmd Msg, Audio.AudioCmd Msg)
 init _ =
-    ( newModel
-    , Cmd.batch
-      [ Browser.Dom.getViewport |> Task.attempt (\r ->
+    ( newApp
+    , [ Browser.Dom.getViewport |> Task.attempt (\r ->
             case r of
                     Ok vp ->
                             setWindowSize (floor vp.viewport.width) (floor vp.viewport.height)
@@ -204,42 +232,65 @@ init _ =
             )
       , Task.perform Tick Time.now --(Game.Tick >> GameMessage) Time.now
       ]
-    , Audio.loadAudio SoundLoaded "assets/Respite.mp3"
+      |> Cmd.batch
+    , Audio.cmdBatch 
+      [ Audio.loadAudio SoundLoaded "assets/bgm.mp3"
+      , Audio.loadAudio SoundLoaded "assets/drop.mp3"
+      ]
     )
 
-update : Audio.AudioData -> Msg -> Model -> (Model, Cmd Msg, Audio.AudioCmd Msg)
-update _ msg model =
+update : Audio.AudioData -> Msg -> App -> (App, Cmd Msg, Audio.AudioCmd Msg)
+update _ msg app =
+  let dropSFX = mapAppAudio (\a -> { a | sfx = (DropSound, (getAppClock app |> clockValue)) :: a.sfx})
+  in
   case msg of
+    NewLemmingValues values ->
+      ( mapAppGame (Game.update (Game.GotLemmingValue values)) app
+      , Cmd.none
+      , Audio.cmdNone
+      )
     ViewOptions ->
-      ( Options (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model)
+      ( Options (appModel app) |> dropSFX
       , Cmd.none
       , Audio.cmdNone
       )
     ViewCredits ->
-      ( Credits (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model)
+      ( Credits (appModel app) |> dropSFX
       , Cmd.none
       , Audio.cmdNone
       )
     ViewMainMenu ->
-      ( Menu (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model)
+      ( Menu (appModel app) |> dropSFX
       , Cmd.none
       , Audio.cmdNone
       )
     StartGame ->
-      ( Game (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model) (Game.newGame (getModelConfig model) (getModelClock model |> clockValue))
-      , Cmd.none
+      ( Game (appModel app) (Game.newGame (getAppClock app |> clockValue) (getAppConfig app)) |> dropSFX
+      , Cmd.batch (List.map (uncurry Random.generate) generateLemmingValues)
       , Audio.cmdNone
       )
     UpdateVideoSystem vmsg -> 
-      updateVideo vmsg model
-    UpdateConfig (ListenForKey control) ->
-      ( OptionsUpdatingControl (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model) (control)
-      , Cmd.none
-      , Audio.cmdNone
-      )
+      updateVideo vmsg app
+    UpdateConfig configMsg ->
+      case configMsg of 
+        (ListenForKey control) ->
+          ( OptionsUpdatingControl (appModel app) (control)
+          , Cmd.none
+          , Audio.cmdNone
+          )
+        SetMusicVolume volume ->
+          ( mapAppConfig (Config.setMusicVolume volume) app
+          , Cmd.none
+          , Audio.cmdNone
+          )
+        SetSFXVolume volume ->
+          ( mapAppConfig (Config.setSFXVolume volume) app
+          , Cmd.none
+          , Audio.cmdNone
+          )
     SoundLoaded (Ok sound) ->
-      ( model
-        |> mapModelAudio (\a -> {a | music = Just sound})
+      ( app
+        |> mapAppAudio (\a -> {a | music = Just sound})
       , Cmd.none
       , Audio.cmdNone
       )
@@ -247,108 +298,129 @@ update _ msg model =
       let
           errr = Debug.log "Sound loading error" e
       in
-      (model, Cmd.none, Audio.cmdNone)
+      (app, Cmd.none, Audio.cmdNone)
     Tick t ->
-      ( model
-        |> mapModelClock (always (Clock t))
-        |> mapModelGame (Game.update (Game.Tick t))
+      ( app
+        |> mapAppClock (always (Clock t))
+        |> mapAppGame (Game.update (Game.Tick t))
       , Cmd.none
       , Audio.cmdNone
       )
     KeyUp k ->
-      case model of 
-        Game _ _ _ _ _ ->
-          ( mapModelGame (Game.update (Game.KeyUp k)) model
+      case app of 
+        Game _ _ ->
+          ( mapAppGame (Game.update (Game.KeyUp k)) app
           , Cmd.none
           , Audio.cmdNone
           )
         _ ->
-          (model, Cmd.none, Audio.cmdNone)
+          (app, Cmd.none, Audio.cmdNone)
     KeyDown k ->
-      case model of 
-        OptionsUpdatingControl config a v c control ->
-          ( Options (Config.updateControl control k config) a v c
+      case app of 
+        OptionsUpdatingControl config control ->
+          ( mapAppConfig (Config.updateControl control k) app |> appModel |> Options
           , Cmd.none
           , Audio.cmdNone
           )
-        Game _ _ _ _ _ ->
-          ( mapModelGame (Game.update (Game.KeyDown k)) model
+        Game _ _ ->
+          ( mapAppGame (Game.update (Game.KeyDown k)) app
           , Cmd.none
           , Audio.cmdNone
           )
         _ ->
-          (model, Cmd.none, Audio.cmdNone)
+          (app, Cmd.none, Audio.cmdNone)
     GameMessage (Game.ExitGame) ->
-      ( Menu (getModelConfig model) (getModelAudio model) (getModelVideo model) (getModelClock model)
+      ( Menu (appModel app) |> dropSFX
       , Cmd.none
       , Audio.cmdNone
       )
     GameMessage gmsg ->
-      ( mapModelGame (Game.update gmsg) model
+      ( mapAppGame (Game.update gmsg) app
       , Cmd.none
       , Audio.cmdNone
       )
 
 
-updateVideo : VideoMsg -> Model -> (Model, Cmd Msg, Audio.AudioCmd Msg)
+updateVideo : VideoMsg -> App -> (App, Cmd Msg, Audio.AudioCmd Msg)
 updateVideo vmsg model =
   case vmsg of
     SetWindowSize width height ->
-      ( mapModelVideo (\v -> { v | width = width, height = height }) model
+      ( mapAppVideo (\v -> { v | width = width, height = height }) model
       , Cmd.none
       , Audio.cmdNone
       )
     SetFrameDelta delta ->
-      ( mapModelVideo (\v -> { v | delta = delta }) model
+      ( mapAppVideo (\v -> { v | delta = delta }) model
       , Cmd.none
       , Audio.cmdNone
       )
 
-subscriptions : Audio.AudioData -> Model -> Sub Msg
-subscriptions _ _ = 
-  Sub.batch
-    [ {-Browser.Events.onAnimationFrameDelta setFrameDelta
-    , -}Browser.Events.onResize setWindowSize
-    , Time.every 100 (Game.Tick >> GameMessage)
-    , Browser.Events.onKeyDown (Json.Decode.map KeyDown Key.decoder)
-    , Browser.Events.onKeyUp (Json.Decode.map KeyUp Key.decoder)
-    ]
+subscriptions : Audio.AudioData -> App -> Sub Msg
+subscriptions _ model = 
+  let
+      inputEvts = 
+        case model of
+          Game _ _ -> 
+            [ Browser.Events.onKeyDown (Json.Decode.map KeyDown Key.decoder)
+            , Browser.Events.onKeyUp (Json.Decode.map KeyUp Key.decoder)
+            ]
+          OptionsUpdatingControl _ _ ->
+            [ Browser.Events.onKeyDown (Json.Decode.map KeyDown Key.decoder)
+            , Browser.Events.onKeyUp (Json.Decode.map KeyUp Key.decoder)
+            ]
+          _ -> 
+            []
+      timingEvts = 
+        case model of
+          Game _ _ ->
+            [ {-Browser.Events.onAnimationFrameDelta setFrameDelta
+            , -}Time.every 100 (Game.Tick >> GameMessage)
+            ]
+          _ -> []
 
-view : Audio.AudioData -> Model -> Html.Html Msg
-view _ model =
-  let viewScreen = model |> getModelVideo |> video |> (\attrs og -> Html.main_ (og ++ attrs))
   in
-  case model of
-    (Game _ _ _ _ _) as game -> 
-      model
-      |> getModelGame
+    Browser.Events.onResize setWindowSize
+    :: inputEvts
+    ++ timingEvts
+    |> Sub.batch
+
+view : Audio.AudioData -> App -> Html.Html Msg
+view _ app =
+  let viewScreen = app |> getAppVideo |> video |> (\attrs og -> Html.main_ (og ++ attrs))
+      config = getAppConfig app
+  in
+  case app of
+    (Game _ g) as game -> 
+      g
       |> Game.view
       |> viewScreen [ Hats.id "game" ]
       |> Html.map GameMessage
-    (Title _ _ _ _) ->
+    (Title _) ->
       viewScreen []
         [ Html.h1 [] [ Html.text "Salvatore's Bridge" ] ]
-    (Credits _ _ _ _) ->
+    (Credits _) ->
       viewScreen [ Hats.id "credits" ]
         [ Html.h2 [] [ Html.text "Credits" ]
         , Html.h3 [] [ Html.text "Programming, Writing, Graphics" ]
         , Html.h4 [] [ Html.text "Zachariah" ]
         , Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ]
         ]
-    (Menu _ _ _ _) ->
+    (Menu _ ) ->
       Html.h1 [] [ Html.text "Salvatore's Bridge" ]
         :: mainMenu
         |> viewScreen [ Hats.id "main-menu" ]
-    (Options config _ _ _) ->
+    (Options model) ->
       [ Html.h2 [] [ Html.text "Options" ]
       , (controllerOptions config)
+      , (musicVolumeOptions config)
       ]
       ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
       |> viewScreen [ Hats.id "options" ]
-    (OptionsUpdatingControl config _ _ _ control) ->
+    (OptionsUpdatingControl model control) ->
       [ Html.h2 [] [ Html.text "Options" ]
       , Html.h3 [] [ Html.text "Controls" ]
       , (controllerOptions config)
+      , (musicVolumeOptions config)
       ]
       ++ [ Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ] ]
       ++ (controlOverlay control)
@@ -370,7 +442,7 @@ menuButton string msg =
 controllerOption config k =
   [ Html.dl [ Hats.class "controller-row" ]
     [ Html.dt  []
-      [ Html.text (Config.configNameForControl k)
+      [ Html.text (Config.nameForControl k)
       , Html.text ": "
       ]
       , Html.dd [] 
@@ -393,4 +465,27 @@ controllerOptions config =
   |> Html.section [ Hats.class "controls" ]
 
 controlOverlay control =
-  [ Html.div [ Hats.id "listening-overlay" ] [ "Press desired key for " ++ (Config.configNameForControl control) |> Html.text ] ]
+  [ Html.div [ Hats.id "listening-overlay" ] [ "Press desired key for " ++ (Config.nameForControl control) |> Html.text ] ]
+
+musicVolumeOptions config =
+  Html.h3 [] [ Html.text "Volume" ]
+    :: musicOption (Config.musicVolume config |> String.fromFloat)
+    ++ sfxOption (Config.sfxVolume config |> String.fromFloat)
+    |> Html.section [ Hats.class "music" ]
+
+volumeOption name id msg val =
+  [ Html.label [ Hats.for id ] [ Html.text name ]
+  , Html.input 
+    [ Hats.type_ "range"
+    , Hats.id id
+    , Hats.min "0.0"
+    , Hats.max "1.0"
+    , Hats.step "0.05"
+    , Hats.value val
+    , Emits.onInput (String.toFloat >> Maybe.withDefault 0.5 >> msg)
+    ] []
+  ]
+
+musicOption = volumeOption "Music" "music-volume-slider" (UpdateConfig << SetMusicVolume)
+sfxOption = volumeOption "SFX" "sfx-volume-slider" (UpdateConfig << SetSFXVolume)
+
