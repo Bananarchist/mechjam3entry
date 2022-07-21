@@ -65,6 +65,45 @@ main#options {
 main#credits {
 }
 
+.transition-gradient {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  background: radial-gradient(transparent, black 10%);
+  background-position: center;
+  background-repeat: no-repeat;
+  animation: scene-transition-bg-size 2500ms ease-in forwards;
+}
+
+.transition-fade {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  background-color: rgba(0,0,0,1);
+  animation: scene-transition-opacity 2000ms ease-in forwards;
+}
+
+.reverse-animation {
+  animation-direction: reverse;
+}
+
+@keyframes scene-transition-bg-size {
+  from {
+    background-size: 10000% 10000%;
+  }
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+@keyframes scene-transition-opacity {
+  from {
+    opacity: 1;
+  } to {
+    opacity: 0;
+  }
+}
+
 .sprite-sheet {
   position: absolute;
   background: no-repeat url(assets/gfx.png) 0 -1080px;

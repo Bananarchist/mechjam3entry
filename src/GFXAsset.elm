@@ -50,7 +50,7 @@ transformationCss tx =
     Mirrored Neither -> []
     Mirrored _ -> [("transform", "scaleX(-1)")]
     Scaled (x,y) -> [("transform", "scale(" ++ (String.fromFloat x) ++ ", " ++ (String.fromFloat y) ++ ")")]
-    Rotated a -> [("transform", "rotate(" ++ (String.fromFloat a) ++ "rad)")]
+    Rotated a -> [("transform", "rotate(" ++ (degrees a |> String.fromFloat) ++ "rad)")]
 
 transformationsAsStyleAttributes : List Transformation -> List (Html.Attribute msg)
 transformationsAsStyleAttributes =
@@ -135,12 +135,29 @@ bg = viewSprite (Box (410, 160) (bgWidth, bgHeight)) []
 distantBg = viewSpriteWithAttrs [ Hats.style "opacity" "0.3" ] (Box (1078, 663) (bgWidth, bgHeight)) [Translated (0, 40)]
 
 
+mechArmRightStillBox = Box (806, 925) (66, 80) 
+mechArmLeftStillBox = Box (727, 926) (63, 78) 
+mechArmRightExtendedBox = Box (494, 916) (70, 96) 
+mechArmLeftExtendedBox = Box (418, 920) (71, 89) 
+mechTorsoStraight = Box (1102, 924) (43, 114) 
+mechLegLeftStraight = Box (893, 920) (49, 82) 
+mechLegRightStraight = Box (957, 920) (47, 81) 
+mechLegLeftBrace = Box (581, 922) (54, 78) 
+mechLegRightBrace = Box (654, 925) (58, 76) 
+
+
 mechStandBox = Box (586, 743) (85, 178)
 mechPickUpBox = Box (684, 743) (113, 178)
 mechHoldingBox = Box (805, 743) (77, 178)
 
 mechStandSprite leftFacing xDistance = 
-    viewSprite mechStandBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
+    [ viewSprite mechArmLeftStillBox [Translated (xDistance+2, 225), Mirrored (if leftFacing then Horizontally else Neither ), Rotated 90 ]
+    , viewSprite mechLegLeftStraight [Translated (xDistance+7, 286), Mirrored (if leftFacing then Horizontally else Neither )]
+    , viewSprite mechTorsoStraight [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither )]
+    , viewSprite mechLegRightStraight [Translated (xDistance+7, 286), Mirrored (if leftFacing then Horizontally else Neither )]
+    , viewSprite mechArmRightStillBox [Translated (xDistance+2, 225), Mirrored (if leftFacing then Horizontally else Neither ), Rotated 90 ]
+    ]
+    --viewSprite mechStandBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
 
 mechPickUpSprite leftFacing xDistance =
     viewSprite mechPickUpBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
@@ -157,8 +174,8 @@ segmentSprite x y rot leftFacing highlighted =
 
 lemmingBox = Box (465, 770) (7,21)
 
-lemmingSprite x y = 
-  viewSprite lemmingBox [Translated (x, y)]
+lemmingSprite x y s = 
+  viewSprite lemmingBox [Translated (x, (y + (21 - 21 * s))), Scaled (1, s) ]
 
 waveBox = Box (1271, 161) (638, 123)
 

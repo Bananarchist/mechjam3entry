@@ -25,7 +25,7 @@ type Segment
   -- Falling Float RemainingMillis
 
 
-newBridge = Bridge (Stray (0,320) (degrees -120)) (Stray (560,300) (degrees -45)) (Stray (20,280) (degrees -160))
+newBridge = Bridge (Stray (0,320) (-120)) (Stray (560,300) (-45)) (Stray (20,280) (-160))
 
 length = 119
 bridgeStart = 171
@@ -83,13 +83,16 @@ placement segment =
 
 terminus : Bridge -> Float
 terminus bridge =
-  segmentList bridge
-  |> List.indexedMap (\i _ -> i)
-  |> List.Extra.takeWhile (not << placeOpen bridge)
-  |> List.length
-  |> (*) length
-  |> (+) bridgeStart
-  |> toFloat
+  if complete bridge then
+    1000
+  else
+    segmentList bridge
+    |> List.indexedMap (\i _ -> i)
+    |> List.Extra.takeWhile (not << placeOpen bridge)
+    |> List.length
+    |> (*) length
+    |> (+) bridgeStart
+    |> toFloat
 
 placeOpen bridge idx =
   segmentList bridge

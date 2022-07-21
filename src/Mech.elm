@@ -145,13 +145,46 @@ update {mech, bridge, ocean} delta =
     |> checkSegmentInteractions bridge delta
     |> checkOceanInteractions ocean delta 
 
+    {-
+type MechElement 
+  = ArmRight
+  | ArmLeft
+  | Torso
+  | LegRight
+  | LegLeft
+
+type Side = Left | Right
+type Arm = Arm Side
+type Leg = Leg Side
+type Body = Body
+
+type MechPose ar al t lr ll = MechPose ar al t lr ll
+
+
+type Uneq = Uneq
+
+initMechPose : MechPose Uneq Uneq Uneq Uneq Uneq
+initMechpose = MechPose Uneq Uneq Uneq Uneq Uneq
+
+viewMechPose : MechPose (Arm Right) (Arm Left) Body (Leg Right) (Leg Left) -> [Html.Html msg]
+viewMechPose MechPose al ar b ll lr =
+  [ drawArmLeft
+  , drawLegLeft
+  , drawTorso
+  , drawLegRight
+  , drawArmRight
+  ]
+    -}
+
+
+
 view mech = 
   if isLifting mech then 
     if mech |> remainingMillis |> Misc.within 0 200 then
-      GFXAsset.mechPickUpSprite (mech |> isFacingLeft) (mech |> xPos)
+      [ GFXAsset.mechPickUpSprite (mech |> isFacingLeft) (mech |> xPos) ]
     else
       GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)
   else if isCarrying mech then
-    GFXAsset.mechHoldingSprite (mech |> isFacingLeft) (mech |> xPos)
+    [ GFXAsset.mechHoldingSprite (mech |> isFacingLeft) (mech |> xPos) ]
   else
     GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)
