@@ -229,15 +229,19 @@ gameResult game =
       phase = gamePhase game
       ({mech, bridge, lastTick, score, ocean, lemmings} as state) = gameState game
       maybeDebugger = gameDebugger game
-      realScore = List.length (List.filter Lemmings.isAlive lemmings) |> toFloat |> min 1 |> Score
+      survivors = List.length (List.filter Lemmings.isAlive lemmings) |> toFloat
+      anySurvivors = survivors > 0
+      realScore = survivors |> max 2 |> Score
   in
   case phase of
     Play -> 
-      if Bridge.complete bridge && (not <| Lemmings.anyLeftToRescue lemmings) then
+      if Bridge.complete bridge && (not <| Lemmings.anyLeftToRescue lemmings) && anySurvivors then
         if Mech.xPos mech >= 400 then
           Just (CompleteVictory realScore) |> Debug.log "Complete victory"
         else
           Just (SavedPeople realScore)|> Debug.log "saved people"
+      else if not anySurvivors then
+          Just Lost
       else if Ocean.highTide ocean then
         Just (Died realScore)|> Debug.log "high tide"
       else if Mech.hasDrowned mech then
@@ -460,6 +464,15 @@ view game =
           |> GFXAsset.fadeInText
           |> GFXAsset.withSendMessageBtn (ExitGame) "The End"
           |> withTransitionalView
+        Lost ->
+          [ "The waves took everyone."
+          , "The tide was too strong, all surfaces too slick."
+          , "I made it, somehow..."
+          ]
+          |> GFXAsset.fadeInText
+          |> GFXAsset.withSendMessageBtn (RestartGame) "Try Again"
+          |> GFXAsset.withSendMessageBtn (ExitGame) "Game Over"
+          |> withTransitionalView
         _ ->
           [ "Our only hope had been lost to the water."
           , "Of a hundred people who stood on the bridge that night, praying, pleading..."
@@ -479,9 +492,10 @@ view game =
       ++ Lemmings.view lemmings
       ++ [ GFXAsset.bg ]
       ++ Bridge.view bridge
-      ++ Mech.view mech
       ++ Ocean.viewCrashingWave ocean
+      ++ Mech.view mech
       ++ [ Ocean.viewFrontTide ocean ]
+      ++ Mech.struckView mech
       ++ [ GFXAsset.rain ]
       ++ warningScreen
       ++ pauseOverlay

@@ -46,7 +46,6 @@ main {
   display: flex;
   flex-direction: column;
   text-align: center;
-  overflow-y: hidden;
 }
 
 main#main-menu {
@@ -57,6 +56,7 @@ main#game {
   /*place-content: unset;*/
   place-content: space-between;
   box-shadow: inset 0 20vh 30vh black;
+  overflow: hidden;
 }
 
 main#options {

@@ -23,11 +23,11 @@ waveSurfaceDangerZone ocean =
     (15, 560)
 waveBridgeDangerZone ocean =
   if ocean |> oceanTide |> tidalValue |> Misc.within 0 33 then
-    (116, 524)
+    (330, 520)
   else if ocean |> oceanTide |> tidalValue |> Misc.within 0 66 then
-    (61, 560)
+    (253, 670)
   else 
-    (15, 560)
+    (115, 630)
 tidalDangerZone ocean =
   if ocean |> oceanTide |> tidalValue |> Misc.within 0 33 then
     (10000, 100001)

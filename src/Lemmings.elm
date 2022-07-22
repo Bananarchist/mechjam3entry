@@ -1,7 +1,7 @@
 module Lemmings exposing (..)
 
 
-import Basics.Extra exposing (uncurry, flip)
+import Basics.Extra exposing (uncurry, flip, fractionalModBy)
 import Bridge
 import Dict
 import GFXAsset
@@ -14,7 +14,7 @@ type alias Position = (Float, Float)
 type alias RemainingTime = Float
 
 type Impulse
-  = FleeWave
+  = FleeWave Float
   | FleeStorm
   | Pray
 
@@ -30,7 +30,7 @@ type Lemming
     --{ position : Position }
   | Sneaking LemmingStats Position Impulse
   | Rescued Position
-  | Falling Position RemainingTime
+  | Falling LemmingStats Position RemainingTime
   | Dead
 
 defaultSpeed = 50.0
@@ -44,10 +44,6 @@ newPopulationWithRandomValues : List Float -> (List Float, List Lemming)
 newPopulationWithRandomValues vals = 
   newPopulation
   |> flip mapRandomValues vals
-
-{- We want to check if hasSpeedState - if not, create one with rand val
-if so, then (later) we should look to other rand vals to introduce such
-as mapping to risk taker (eg, tightrope walker) -}
 
 mapRandomValues : List Lemming -> List Float -> (List Float, List Lemming)
 mapRandomValues lemmings lval =
@@ -72,13 +68,6 @@ mapRandomValues lemmings lval =
   |> uncurry (loop [mapSpeedStat, mapHeightStat])
 
 
-{-
-hasSpeedStat : Lemming -> Bool
-hasSpeedStat =
-  stats 
-  >> Maybe.map (List.any isSpeedAttr) 
-  >> Maybe.withDefault False
--}
 
 mapDistanceStat : (Float -> Float) -> LemmingStats -> LemmingStats
 mapDistanceStat updater =
@@ -122,15 +111,15 @@ heightValue attr =
     
 tossLemming lemming = 
   case lemming of 
-    Living _ (x, y) _ -> Falling (x, y) 300
-    Sneaking _ (x, y) _ -> Falling (x, y) 300
+    Living s (x, y) _ -> Falling s (x, y) 1000
+    Sneaking s (x, y) _ -> Falling s (x, y) 1000
     _ -> lemming
 
 xPos lemming =
   case lemming of
     Living _ (x, _) _ -> x
     Sneaking _ (x, _) _ -> x
-    Falling (x, _) _ -> x
+    Falling _ (x, _) _ -> x
     Dead -> 0
     Rescued (x, _) -> x
 
@@ -138,7 +127,7 @@ yPos lemming =
   case lemming of
     Living _ (_, y) _ -> y
     Sneaking _ (_, y) _ -> y
-    Falling (_, y) _ -> y
+    Falling _ (_, y) _ -> y
     Dead -> 0
     Rescued (_, y) -> y
 
@@ -146,6 +135,7 @@ stats lemming =
   case lemming of
     Living attrs _ _ -> attrs
     Sneaking attrs _ _ -> attrs
+    Falling attrs _ _ -> attrs
     _ -> Dict.empty 
 
 attribute =
@@ -157,6 +147,11 @@ isAlive lemming =
     Sneaking _ _ _ -> True
     Rescued _ -> True
     _ -> False
+
+isUpdatable lemming =
+  case lemming of
+    Dead -> False
+    _ -> True
 
 isPraying lemming =
   case impulse lemming of
@@ -175,7 +170,7 @@ isFleeingStorm lemming =
   
 isFleeingWave lemming =
   case impulse lemming of
-    Just FleeWave -> True
+    Just (FleeWave _) -> True
     _ -> False
 
 isRunning lemming =
@@ -183,7 +178,7 @@ isRunning lemming =
 
 isFalling lemming = 
   case lemming of
-    Falling _ _ -> True
+    Falling _ _ _ -> True
     _ -> False
 
 
@@ -199,13 +194,13 @@ impulse lemming =
 updateX updater lemming =
   case lemming of
     Living s (x, y) i -> Living s (updater x, y) i
-    Falling (x, y) rt -> Falling (updater x, y) rt
+    Falling s (x, y) rt -> Falling s (updater x, y) rt
     _ -> lemming
 
 updateY updater lemming =
   case lemming of
     Living s (x, y) i -> Living s (x, updater y) i
-    Falling (x, y) rt -> Falling (x, updater y) rt
+    Falling s (x, y) rt -> Falling s (x, updater y) rt
     _ -> lemming
 
 updateImpulse updater lemming =
@@ -215,13 +210,17 @@ updateImpulse updater lemming =
 
 updateRemainingTime updater lemming =
   case lemming of
-    Falling (x, y) rt -> Falling (x, y) (updater rt)
+    Falling s (x, y) rt -> Falling s (x, y) (updater rt)
     _ -> lemming
 
 updateFalling delta lemming =
   case lemming of
-    Falling (x, y) rt ->
-      if rt - delta <= 0 then Dead else Falling (x, y + (delta/100)) (rt - delta)
+    Falling s (x, y) rt ->
+      let height = s |> attribute "height" |> Maybe.map heightValue |> Maybe.withDefault defaultHeight
+          xDir = height |> fractionalModBy 2 |> (\v -> if v > 1 then 1 else -1)
+          xMod = height / 90 * delta / 100 * xDir
+      in
+      if rt - delta <= 0 then Dead else Falling s (x + xMod, y + (delta/10)) (rt - delta)
     _ -> lemming
  
 mapStats updater lemming =
@@ -240,7 +239,7 @@ runSpeed lemming =
     |> Maybe.map (\i ->
       case i of
         FleeStorm -> 3.5
-        FleeWave -> if xPos lemming > 300 then 3.5 else -3.5
+        FleeWave n -> n * 3.5 --if xPos lemming > 300 then 3.5 else -3.5
         _ -> 0
     )
   |> flip Maybe.Extra.andMap (Maybe.map (*) speedAttr)
@@ -249,25 +248,22 @@ runSpeed lemming =
 makeDecisions bridge ocean delta lemming =
   let distance = stats lemming |> attribute "distance" |> Maybe.map distanceValue |> Maybe.withDefault defaultDistance
       bmax = Bridge.terminus bridge
-      shouldStopRunning = isFleeingStorm lemming && Misc.within (bmax - 1.5 - distance) bmax (xPos lemming)
       (dzx1, dzx2) = Ocean.waveBridgeDangerZone ocean
-      shouldStartFleeingWave = Misc.within dzx1 dzx2 (xPos lemming) && (Ocean.oceanWave ocean |> Ocean.waveValue) <= 10
+      inDangerZone = Misc.within dzx1 dzx2 (xPos lemming)
+      shouldStopRunning = isFleeingStorm lemming && Misc.within (bmax - 1.5 - distance) bmax (xPos lemming)
       canContinueCrossing = xPos lemming <= (bmax - 1.5 - distance)
       willSneak = False
+      directionalMode = if Bridge.complete bridge && (xPos lemming) > 300 then 1 else -1
+      timeToThinkAboutFleeingWave = (Ocean.oceanWave ocean |> Ocean.waveValue) <= 10
   in
-  if Ocean.isWaveCrashing ocean && shouldStartFleeingWave then -- too late to flee now...
-    lemming |> Debug.log ("tossed") |> tossLemming 
-  else if willSneak && (not shouldStartFleeingWave) then
-    lemming
-    --Sneaking (xPos lemming, yPos lemming) (FleeingStorm)
-  else if xPos lemming > 560 then 
+  if Ocean.isWaveCrashing ocean && inDangerZone then -- too late to flee now...
+    lemming |> tossLemming
+  else if xPos lemming > 620 then 
     Rescued (xPos lemming, yPos lemming)
-  else if xPos lemming > bmax then 
-    lemming {- |> Debug.log ("tossed") -} |> tossLemming 
-  else if shouldStopRunning then
+  else if timeToThinkAboutFleeingWave && inDangerZone then
+    updateImpulse (always (FleeWave directionalMode)) lemming
+  else if not canContinueCrossing then
     updateImpulse (always Pray) lemming
-  else if shouldStartFleeingWave then
-    updateImpulse (always FleeWave) lemming
   else if canContinueCrossing then
     updateImpulse (always FleeStorm) lemming
   else lemming
@@ -291,11 +287,11 @@ view =
 updateLemming bridge ocean delta lemming =
   case lemming of
     Living _ (x, y) i -> run bridge ocean delta lemming
-    Falling _ _ -> updateFalling delta lemming
+    Falling _ _ _ -> updateFalling delta lemming
     Sneaking _ _ _ -> run bridge ocean delta lemming
     _ -> lemming
   
 
 update bridge ocean delta =
   List.map (updateLemming bridge ocean delta)
-  >> List.filter isAlive
+  >> List.filter isUpdatable

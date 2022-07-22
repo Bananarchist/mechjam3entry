@@ -1,4 +1,4 @@
-module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight, distantBg, crashingWaveSprite, rain, warning)
+module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight, distantBg, crashingWaveSprite, rain, warning, mechStruckSprite)
 
 import Basics.Extra exposing (flip, uncurry)
 import Dict
@@ -164,6 +164,10 @@ mechPickUpSprite leftFacing xDistance =
 
 mechHoldingSprite leftFacing xDistance =
     viewSprite mechHoldingBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
+
+mechStruckSprite leftFacing x y rot =
+    viewSprite mechHoldingBox [Translated (x, 200+y), Mirrored (if leftFacing then Horizontally else Neither), Rotated rot]
+
 
 segmentBox = Box (422, 843) (119, 17)
 

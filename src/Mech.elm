@@ -1,4 +1,4 @@
-module Mech exposing (Model, newMech, xPos, isFacingLeft, velocity, view, setX, setLeftFacing, setVelocity, update, startLifting, hasDrowned, hasBeenStruck)
+module Mech exposing (Model, newMech, xPos, isFacingLeft, velocity, view, setX, setLeftFacing, setVelocity, update, startLifting, hasDrowned, hasBeenStruck, struckView)
 
 import Bridge
 import Basics.Extra exposing (flip, uncurry)
@@ -42,7 +42,7 @@ completedCarrying mech =
 mechCompletedLifting mech =
   Carrying (isFacingLeft mech) (xPos mech) 0
 struckByWave mech =
-  Struck (isFacingLeft mech) (xPos mech) 350
+  Struck (isFacingLeft mech) (xPos mech) 1350
 drownInTide mech =
   Drowned (isFacingLeft mech) (xPos mech) 150
 
@@ -179,12 +179,31 @@ viewMechPose MechPose al ar b ll lr =
 
 
 view mech = 
+  let x = xPos mech
+      lf = isFacingLeft mech
+  in
   if isLifting mech then 
     if mech |> remainingMillis |> Misc.within 0 200 then
-      [ GFXAsset.mechPickUpSprite (mech |> isFacingLeft) (mech |> xPos) ]
+      [ GFXAsset.mechPickUpSprite lf x ]
     else
-      [ GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)]
+      [ GFXAsset.mechStandSprite lf x]
   else if isCarrying mech then
-    [ GFXAsset.mechHoldingSprite (mech |> isFacingLeft) (mech |> xPos) ]
+    [ GFXAsset.mechHoldingSprite lf x ]
+  else if hasBeenStruck mech then
+    [ ]
   else
-    [GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)]
+    [ GFXAsset.mechStandSprite lf x ]
+
+struckView mech =
+  let x = xPos mech
+      lf = isFacingLeft mech
+  in
+  if hasBeenStruck mech then
+    let rm = remainingMillis mech |> toFloat
+        rmXmod = rm/125
+        rmYmod = 25/rm
+        rmRotMod = rm / 100 * 180
+    in
+    [ GFXAsset.mechStruckSprite lf (if x > 350 then rmXmod + x else (negate rmXmod) * x) rmYmod rmRotMod ]
+  else
+    []
