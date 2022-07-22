@@ -17,6 +17,7 @@ import Json.Encode
 import Key
 import KeyNames exposing (keyNames)
 import Lemmings
+import List.Extra
 import Message
 import Random
 import Sound
@@ -133,14 +134,14 @@ type alias Video =
   }
 
 type alias Audio =
-  { music : Maybe Audio.Source
-  , musicStartTime : Time.Posix
-  , soundOn : Bool
-  , dropSfx : Maybe Audio.Source
+  { resources : List (Sound.Sound, Audio.Source)
   , sfx :  List (Sound.Sound, Time.Posix)
   }
 
-newAudio = Audio Nothing (Time.millisToPosix 0) True Nothing []
+newAudio = Audio [] []
+getResource t = .resources >> List.Extra.find (Tuple.first >> (==) t) >> Maybe.map Tuple.second
+musicAudio = getResource Sound.Music
+dropAudio = getResource Sound.Drop
 
 type Clock = Clock Time.Posix
 newClock = Clock <| Time.millisToPosix 0
@@ -154,9 +155,9 @@ videoFrameDelta {delta} = delta
 type Msg
   = UpdateVideoSystem VideoMsg
   | GameMessage Game.Msg
-  | InitialValues Time.Posix (List Float)
   | Tick Time.Posix
-  | SoundLoaded (Result Audio.LoadError Audio.Source)
+  | SoundLoaded Sound.Sound (Result Audio.LoadError Audio.Source)
+  | SoundTriggered Sound.Sound Time.Posix
   | ViewOptions
   | ViewCredits
   | ViewMainMenu
@@ -174,20 +175,39 @@ type VideoMsg
   = SetWindowSize Int Int
   | SetFrameDelta Float
 
+
 setWindowSize w h = UpdateVideoSystem <| SetWindowSize w h
 setFrameDelta = UpdateVideoSystem << SetFrameDelta
 
 
 audio : Audio.AudioData -> App -> Audio.Audio
 audio _ app =
+  let musicVolume = getAppConfig app |> Config.musicVolume |> flip (/) 3
+      sfxVolume = getAppConfig app |> Config.sfxVolume |> flip (/) 3
+      aud = getAppAudio app
+      music = getAppGame app |> Maybe.andThen (Game.audioSignals) |> Maybe.map List.singleton |> Maybe.withDefault []
+  in
   case app of 
+    _ ->
+      aud
+      |> .sfx
+      |> (++) music
+      |> List.map 
+        (\(sound, time) ->
+          getResource sound aud
+          |> Maybe.map (flip Audio.audio time)
+          |> Maybe.map (Audio.scaleVolume sfxVolume)
+          |> Maybe.withDefault Audio.silence
+        )
+      |> Audio.group
+        {-
     Game state g ->
       flip List.map (Game.audioSignals g) 
         (\s ->
           case s of
             Game.StartMusic -> 
               Maybe.map (flip Audio.audio (Time.millisToPosix 0)) (getAppAudio app |> .music)
-              |> Maybe.map (Audio.scaleVolume (getAppConfig app |> Config.musicVolume))
+              |> Maybe.map (Audio.scaleVolume musicVolume)
               |> Maybe.withDefault Audio.silence
             _ -> Audio.silence
         )
@@ -197,11 +217,12 @@ audio _ app =
         case sfx of
           Sound.Drop -> 
               Maybe.map (flip Audio.audio (getAppClock app |> clockValue)) (getAppAudio app |> .dropSfx)
-              |> Maybe.map (Audio.scaleVolume (getAppConfig app |> Config.sfxVolume))
+              |> Maybe.map (Audio.scaleVolume sfxVolume)
               |> Maybe.withDefault Audio.silence
           _ -> Audio.silence
       )
       |> Audio.group
+        -}
 
     
 
@@ -219,9 +240,9 @@ video {width,height} =
 
 newApp model time lemms =
   --Title Config.Config Audio Video Clock
-  --Menu newModel |> mapAppSt
+  Menu newModel |> mapModel (\m -> { m | clock = Clock time, random = lemms })
   --Options Config.Config Audio Video Clock
-  Game model (Game.newGameWithLemmings (Lemmings.newPopulationWithRandomValues lemms) time Config.newConfig)
+  --Game model (Game.newGameWithLemmings (Lemmings.newPopulationWithRandomValues lemms) time Config.newConfig)
   --Credits Config.Config Audio Video Clock
 
 generateLemmingValues = 
@@ -243,8 +264,8 @@ init _ =
       ]
       |> Cmd.batch
     , Audio.cmdBatch 
-      [ Audio.loadAudio SoundLoaded "assets/bgm.mp3"
-      , Audio.loadAudio SoundLoaded "assets/drop.mp3"
+      [ Audio.loadAudio (SoundLoaded Sound.Music) "assets/bgm.mp3"
+      , Audio.loadAudio (SoundLoaded Sound.Drop) "assets/drop.mp3"
       ]
     )
 
@@ -252,7 +273,7 @@ init _ =
 
 update : Audio.AudioData -> Msg -> App -> (App, Cmd Msg, Audio.AudioCmd Msg)
 update _ msg app =
-  let dropSFX = mapAppAudio (\a -> { a | sfx = (Sound.Drop, (getAppClock app |> clockValue)) :: a.sfx})
+  let dropSFX = Tuple.mapSecond (List.singleton >> (::) (Task.perform (SoundTriggered Sound.Drop) Time.now) >> Cmd.batch)
       withNone g = (g, Cmd.none, Audio.cmdNone)
       withCmds (g, cmds) c = (g, Cmd.batch (c ++ cmds))
       withAudioNone (g, c) = (g, c, Audio.cmdNone)
@@ -266,14 +287,20 @@ update _ msg app =
   in
   case msg of
     ViewOptions ->
-      Options (appModel app) |> dropSFX
-      |> withNone
+      Options (appModel app) 
+      |> flip Tuple.pair Cmd.none 
+      |> dropSFX
+      |> withAudioNone
     ViewCredits ->
-      Credits (appModel app) |> dropSFX
-      |> withNone
+      Credits (appModel app)
+      |> flip Tuple.pair Cmd.none
+      |> dropSFX
+      |> withAudioNone
     ViewMainMenu ->
-      Menu (appModel app) |> dropSFX
-      |> withNone
+      Menu (appModel app)
+      |> flip Tuple.pair Cmd.none
+      |> dropSFX
+      |> withAudioNone
     UpdateVideoSystem vmsg -> 
       updateVideo vmsg app
     UpdateConfig configMsg ->
@@ -285,24 +312,23 @@ update _ msg app =
           mapAppConfig (Config.setMusicVolume volume) app
           |> withNone
         SetSFXVolume volume ->
-          mapAppConfig (Config.setSFXVolume volume) app |> dropSFX
-          |> withNone
-    SoundLoaded (Ok sound) ->
+          mapAppConfig (Config.setSFXVolume volume) app 
+          |> flip Tuple.pair Cmd.none
+          |> dropSFX
+          |> withAudioNone
+    SoundLoaded soundType (Ok sound) ->
       app 
-      |> mapAppAudio (\a -> {a | music = Just sound})
+      |> mapAppAudio (\a -> {a | resources = (soundType, sound) :: a.resources})
       |> withNone
-    SoundLoaded (Err e) ->
+    SoundLoaded _ (Err e) ->
       let
           errr = Debug.log "Sound loading error" e
       in
       (app, Cmd.none, Audio.cmdNone)
-      {-
-    InitialValues t lvals ->
+    SoundTriggered soundType time ->
       app
-        |> mapAppClock (always (Clock t))
-        |> mapAppRandom ((++) lvals)
-        |> mapAppGame (always (Game.newGameWithLemmings t Config.newConfig (Lemmings.newPopulationWithRandomValues lvals)))
-        |> withNone -}
+      |> mapAppAudio (\a -> {a | sfx = (soundType, time) :: a.sfx})
+      |> withNone
     Tick t ->
       case app of
         Loading m _ Nothing -> Loading m (Just t) Nothing |> withNone
@@ -333,20 +359,23 @@ update _ msg app =
       , Cmd.batch (List.map (uncurry Random.generate) generateLemmingValues)
       , Audio.cmdNone
       )
-          {-
-    GameMessage (Game.StartGame) ->
-      ( Game 
-        (appModel app) 
-        ((Game.newGame (getAppClock app |> clockValue) (getAppConfig app))) 
-        |> dropSFX
-      , Cmd.batch (List.map (uncurry Random.generate) generateLemmingValues)
-      , Audio.cmdNone
-      )-}
     StartGame ->
-      ( app
-      , Cmd.batch (List.map (uncurry Random.generate) generateLemmingValues)
-      , Audio.cmdNone
-      )
+      let time = getAppClock app |> clockValue
+          rando = getAppRandom app
+          conf = getAppConfig app
+          model = appModel app
+      in
+      case app of
+        Menu x ->
+          mapGameMsg (Game.NewGame conf time rando) (mapAppRandom (always [])) (Game (appModel app) (Game.newGame time conf))
+          |> dropSFX
+          |> withAudioNone
+        _  ->  
+          ( app 
+          , Cmd.batch (List.map (uncurry Random.generate) generateLemmingValues)
+          )
+          |> dropSFX
+          |> withAudioNone
     GameMessage (Game.GotLemmingValue l) ->
       case app of
         Loading m Nothing _ -> Loading m Nothing (Just l) |> withNone
@@ -356,12 +385,14 @@ update _ msg app =
           |> withAudioNone
         _ -> app |> withNone
     GameMessage (Game.ExitGame) ->
-      Menu (appModel app) |> dropSFX
-      |> withNone
+      Menu (appModel app) 
+      |> flip Tuple.pair Cmd.none
+      |> dropSFX
+      |> withAudioNone
     GameMessage gmsg ->
       mapGameMsg gmsg identity app
       |> withAudioNone
-    _ -> app |> withNone
+    --_ -> app |> withNone
 
 
 updateVideo : VideoMsg -> App -> (App, Cmd Msg, Audio.AudioCmd Msg)

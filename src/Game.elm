@@ -11,6 +11,7 @@ import Lemmings
 import Mech
 import Message
 import Ocean
+import Sound
 import Time
 
 type Msg 
@@ -32,14 +33,14 @@ type alias State =
   , ocean : Ocean.Ocean
   , lemmings : List Lemmings.Lemming
   , lemmingRandomValues : List Float
-  , audio : List AudioSignal
+  , audio : Maybe (Sound.Sound, Time.Posix)
   }
 
 newState : Time.Posix -> State
 newState time = 
-  State Mech.newMech Bridge.newBridge newScore time Ocean.new Lemmings.newPopulation [] []
+  State Mech.newMech Bridge.newBridge newScore time Ocean.new Lemmings.newPopulation [] Nothing 
 newStateWithLemmings (vals, lemmings) time =
-  State Mech.newMech Bridge.newBridge newScore time Ocean.new lemmings vals []
+  State Mech.newMech Bridge.newBridge newScore time Ocean.new lemmings vals Nothing
 
 newStateWithPreservedLvals time lvals =
   newState time
@@ -72,7 +73,7 @@ type AudioSignal
   | PauseMusic
 
 startMusic state = 
-  { state | audio = StartMusic :: state.audio }
+  { state | audio = Just (Sound.Music, state.lastTick) }
 
 type Score = Score Float
 
@@ -90,7 +91,7 @@ type Game
   = Game Config.Config Phase State (Maybe Debugger)
   | Paused Game
 
-defaultPhase = Play
+defaultPhase = Introduction
 newGame time config = Game config defaultPhase (newState time) Nothing
 newGameWithLemmings lemmings time config =
   Game config defaultPhase (newStateWithLemmings lemmings time) Nothing 
@@ -196,7 +197,7 @@ updateIfGameOver game =
 finishedWithIntro game =
   case game of
     Paused g -> finishedWithIntro g
-    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) s dbg
+    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) (s |> startMusic) dbg
     _ -> game
 
 
