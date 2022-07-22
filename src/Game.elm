@@ -1,8 +1,9 @@
 module Game exposing (Game, newGame, view, Msg(..), update, AudioSignal(..), audioSignals, newGameWithLemmings)
 
-import Basics.Extra exposing (flip)
+import Basics.Extra exposing (flip, fractionalModBy)
 import Bridge
 import Config 
+import Duration
 import GFXAsset
 import Html
 import Html.Attributes as Hats
@@ -12,6 +13,7 @@ import Mech
 import Misc
 import Ocean
 import Sound
+import Task
 import Time
 
 type Msg 
@@ -23,6 +25,7 @@ type Msg
   | ExitGame
   | GotLemmingValue (List Float)
   | NewGame Config.Config Time.Posix (List Float) 
+  | SoundTriggered Sound.Sound Time.Posix
 
 
 type alias State =
@@ -33,7 +36,7 @@ type alias State =
   , ocean : Ocean.Ocean
   , lemmings : List Lemmings.Lemming
   , lemmingRandomValues : List Float
-  , audio : Maybe (Sound.Sound, Time.Posix)
+  , audio : Maybe AudioSignal
   }
 
 newState : Time.Posix -> State
@@ -41,6 +44,21 @@ newState time =
   State Mech.newMech Bridge.newBridge newScore time Ocean.new Lemmings.newPopulation [] Nothing 
 newStateWithLemmings (vals, lemmings) time =
   State Mech.newMech Bridge.newBridge newScore time Ocean.new lemmings vals Nothing
+
+
+type AudioSignal =
+  AudioSignal
+    { sound : Sound.Sound
+    , start : Time.Posix
+    , next : Maybe AudioSignal
+    }
+
+newAudioSignal sound start =
+  AudioSignal
+    { sound = sound
+    , start = start
+    , next = Nothing
+    }
 
 newStateWithPreservedLvals time lvals =
   newState time
@@ -55,18 +73,60 @@ applyRandomValuesTo state =
   , lemmingRandomValues = remaining
   }
 
-getMusicForGame game =
+getMusicForGame (game, cmds) =
   case (gamePhase game, gameState game) of
     (Transition x Introduction Play, _) ->
-      updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Intro, s.lastTick) }) game
+      updateState (\s -> {s | audio = Just (newAudioSignal (Sound.MusicLoop Sound.Intro) s.lastTick)}) game
+      |> flip Tuple.pair (Task.perform (SoundTriggered (Sound.MusicLoop Sound.Intro)) Time.now)
     (Transition x Play (Ending (CompleteVictory _)), _) -> 
-      updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Outro, s.lastTick) }) game
+      updateState (\s -> {s | audio = Just (newAudioSignal (Sound.MusicLoop Sound.Outro) s.lastTick) }) game
+      |> flip Tuple.pair (Task.perform (SoundTriggered (Sound.MusicLoop Sound.Outro)) Time.now)
     (Play, {ocean}) ->
       if (Ocean.oceanTide ocean |> Ocean.tidalValue) < 50 then
-        updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Light, s.lastTick) }) game
+        updateState (\s -> {s | audio = Just (newAudioSignal (Sound.MusicLoop Sound.Light) s.lastTick)}) game
+        |> flip Tuple.pair (Task.perform (SoundTriggered (Sound.MusicLoop Sound.Light)) Time.now)
       else
-        updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Frantic, s.lastTick) }) game
-    _ -> game
+        updateState (\s -> {s | audio = Just (newAudioSignal (Sound.MusicLoop Sound.Frantic) s.lastTick) }) game
+        |> flip Tuple.pair (Task.perform (SoundTriggered (Sound.MusicLoop Sound.Frantic)) Time.now)
+    _ -> game |> flip Tuple.pair Cmd.none
+
+shouldTransitionMusic : (Game, Cmd Msg) -> (Game, Cmd Msg)
+shouldTransitionMusic (game, cmds) =
+  let currentMusic = audioSignals game
+      lastTick = gameState game |> .lastTick
+      diff time duration =
+        Time.posixToMillis time
+        |> (-) (Time.posixToMillis lastTick)
+        |> toFloat
+        |> flip fractionalModBy (Duration.inMilliseconds duration)
+  in
+  currentMusic
+  |> Maybe.map (\(AudioSignal ({sound, start, next} as cm)) ->
+    if Maybe.map (\(AudioSignal n) -> Time.posixToMillis lastTick >= Time.posixToMillis n.start ) next
+      |> Maybe.withDefault False
+    then 
+      Maybe.map (\(AudioSignal n) -> 
+        updateState (\s -> { s | audio = next}) game
+        |> flip Tuple.pair (Task.perform (always (SoundTriggered n.sound n.start)) Time.now)) next
+      |> Maybe.withDefault (game, cmds)
+    else
+      case sound of 
+        Sound.MusicLoop Sound.Intro -> 
+          let d = diff start (Sound.loopLength Sound.Intro) 
+              audio : AudioSignal
+              audio = 
+                AudioSignal 
+                  { cm 
+                    | next = Just 
+                      ( newAudioSignal (Sound.MusicLoop Sound.Light) 
+                        (d + (Time.posixToMillis lastTick |> toFloat) |> floor |> Time.millisToPosix))
+                  }
+          in
+          updateState (\s -> { s | audio = Just audio }) game
+          |> flip Tuple.pair cmds
+        _ -> (game, cmds)
+    )
+    |> Maybe.withDefault (game, cmds)
 
 type Phase
   = Introduction
@@ -79,10 +139,6 @@ type GameResult
   | SavedPeople Score
   | Died Score
   | Lost
-
-type AudioSignal 
-  = StartMusic
-  | PauseMusic
 
 type Score = Score Float
 
@@ -207,7 +263,7 @@ updateIfGameOver game =
 finishedWithIntro game =
   case game of
     Paused g -> finishedWithIntro g
-    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) s dbg |> getMusicForGame
+    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) s dbg
     _ -> game
 
 
@@ -239,14 +295,15 @@ update msg game =
     (StartGame, _) ->
       finishedWithIntro game
       |> withNone
+      |> getMusicForGame
     (NewGame conf tick lvals, _) ->
       newGameWithLemmings (Lemmings.newPopulationWithRandomValues lvals) tick conf
       |> withNone
     (RestartGame, _) ->
       game
       |> updateState (always (newState lastTick))
-      |> getMusicForGame
       |> withNone
+      |> getMusicForGame
     (KeyUp _, False) -> 
       if (Mech.velocity mech) /= 0 then
         updateState (\s -> {s | mech = Mech.setVelocity 0 mech }) game
@@ -318,6 +375,7 @@ update msg game =
               updateState (\s -> { s | lastTick = tock}) game
               |> mapPhase (mapTransitionTime (flip (-) delta))
               |> withNone
+              |> shouldTransitionMusic
               --mapPhase (mapTransitionTime (flip (-) delta)) newGameModel
             else 
               updateIfGameOver newGameModel

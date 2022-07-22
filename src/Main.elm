@@ -187,45 +187,25 @@ audio _ app =
       sfxVolume = getAppConfig app |> Config.sfxVolume |> flip (/) 3
       aud = getAppAudio app
       music = getAppGame app |> Maybe.andThen (Game.audioSignals) |> Maybe.map List.singleton |> Maybe.withDefault []
+      volumeFor st =
+        case st of
+          Sound.MusicLoop _ -> musicVolume
+          Sound.Music -> musicVolume
+          _ -> sfxVolume
   in
   case app of 
     _ ->
       aud
       |> .sfx
-      |> (++) music
+      |> Debug.log "The sounds"
       |> List.map 
         (\(sound, time) ->
           (sound, Sound.audioConfig sound)
           |> Tuple.mapFirst (flip getResource aud)
-          |> (\(res, conf) -> Maybe.map (\r -> Audio.audioWithConfig conf r time) res)
-          |> Maybe.map (Audio.scaleVolume sfxVolume)
+          |> (\(res, conf) -> Maybe.map (\r -> Audio.audioWithConfig conf r time |> Audio.scaleVolume (volumeFor sound)) res)
           |> Maybe.withDefault Audio.silence
         )
       |> Audio.group
-        {-
-    Game state g ->
-      flip List.map (Game.audioSignals g) 
-        (\s ->
-          case s of
-            Game.StartMusic -> 
-              Maybe.map (flip Audio.audio (Time.millisToPosix 0)) (getAppAudio app |> .music)
-              |> Maybe.map (Audio.scaleVolume musicVolume)
-              |> Maybe.withDefault Audio.silence
-            _ -> Audio.silence
-        )
-        |> Audio.group
-    _ ->
-      flip List.map (getAppAudio app |> .sfx) (\(sfx, _) ->
-        case sfx of
-          Sound.Drop -> 
-              Maybe.map (flip Audio.audio (getAppClock app |> clockValue)) (getAppAudio app |> .dropSfx)
-              |> Maybe.map (Audio.scaleVolume sfxVolume)
-              |> Maybe.withDefault Audio.silence
-          _ -> Audio.silence
-      )
-      |> Audio.group
-        -}
-
     
 
 video : Video -> List (Html.Attribute msg)
@@ -318,6 +298,18 @@ update _ msg app =
           |> flip Tuple.pair Cmd.none
           |> dropSFX
           |> withAudioNone
+    SoundLoaded Sound.Music (Ok sound) ->
+      app 
+      |> mapAppAudio (\a -> 
+        { a 
+        | resources = 
+          [ (Sound.Music, sound)
+          , (Sound.MusicLoop Sound.Intro, sound)
+          , (Sound.MusicLoop Sound.Light, sound)
+          , (Sound.MusicLoop Sound.Frantic, sound)
+          , (Sound.MusicLoop Sound.Outro, sound)
+          ] ++ a.resources})
+      |> withNone
     SoundLoaded soundType (Ok sound) ->
       app 
       |> mapAppAudio (\a -> {a | resources = (soundType, sound) :: a.resources})
@@ -386,6 +378,10 @@ update _ msg app =
           mapGameMsg (Game.NewGame (getAppConfig app) (getAppClock app |>  clockValue) l) (mapAppRandom (always l)) app
           |> withAudioNone
         _ -> app |> withNone
+    GameMessage (Game.SoundTriggered soundType time) ->
+      app
+      |> mapAppAudio (\a -> {a | sfx = (soundType, time) :: a.sfx})
+      |> withNone
     GameMessage (Game.ExitGame) ->
       Menu (appModel app) 
       |> flip Tuple.pair Cmd.none

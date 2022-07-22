@@ -222,3 +222,4 @@ rain =
 
 warning =
   Html.div [ Hats.id "warning" ] []
+
