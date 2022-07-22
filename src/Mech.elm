@@ -183,8 +183,8 @@ view mech =
     if mech |> remainingMillis |> Misc.within 0 200 then
       [ GFXAsset.mechPickUpSprite (mech |> isFacingLeft) (mech |> xPos) ]
     else
-      GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)
+      [ GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)]
   else if isCarrying mech then
     [ GFXAsset.mechHoldingSprite (mech |> isFacingLeft) (mech |> xPos) ]
   else
-    GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)
+    [GFXAsset.mechStandSprite (mech |> isFacingLeft) (mech |> xPos)]

@@ -19,6 +19,7 @@ import KeyNames exposing (keyNames)
 import Lemmings
 import List.Extra
 import Message
+import Misc
 import Random
 import Sound
 import Task
@@ -194,8 +195,9 @@ audio _ app =
       |> (++) music
       |> List.map 
         (\(sound, time) ->
-          getResource sound aud
-          |> Maybe.map (flip Audio.audio time)
+          (sound, Sound.audioConfig sound)
+          |> Tuple.mapFirst (flip getResource aud)
+          |> (\(res, conf) -> Maybe.map (\r -> Audio.audioWithConfig conf r time) res)
           |> Maybe.map (Audio.scaleVolume sfxVolume)
           |> Maybe.withDefault Audio.silence
         )
@@ -457,8 +459,10 @@ view _ app =
     (Credits _) ->
       viewScreen [ Hats.id "credits" ]
         [ Html.h2 [] [ Html.text "Credits" ]
-        , Html.h3 [] [ Html.text "Programming, Writing, Graphics" ]
+        , Html.h3 [] [ Html.text "Programming, Writing, Graphics, Music" ]
         , Html.h4 [] [ Html.text "Zachariah" ]
+        , Html.h3 [] [ Html.text "Sound Effects" ]
+        , Html.h4 [] [ Html.text "valkstar, Jak" ]
         , Html.button [ Emits.onClick ViewMainMenu ] [ Html.text "Go Back" ]
         ]
     (Menu _ ) ->

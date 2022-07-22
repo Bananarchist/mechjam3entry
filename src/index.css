@@ -56,6 +56,7 @@ main#main-menu {
 main#game {
   /*place-content: unset;*/
   place-content: space-between;
+  box-shadow: inset 0 20vh 30vh black;
 }
 
 main#options {
@@ -275,6 +276,9 @@ p {
   opacity: 0;
   animation: introduceParagraph calc(var(--animation-length) * 1ms) forwards;
   margin: 0.8rem 0;
+  color: steelblue;
+  letter-spacing: 0.05rem;
+  margin-bottom: 0;
 }
 
 p:nth-of-type(2) { animation-delay: calc(var(--animation-length) * 2ms); }
@@ -288,3 +292,44 @@ p:nth-of-type(8) { animation-delay: calc(var(--animation-length) * 14ms); }
 @keyframes introduceParagraph { from { opacity: 0; } to { opacity: 1; }}
 
 
+@keyframes rain {
+  0% {
+    background-position: 0 0;
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1.0;
+  }
+  100% {
+    background-position: 8% 80%;
+    opacity: 0.5;
+  }
+}
+
+#rain {
+  position: absolute;
+  width: 1000%;
+  height: 1000%;
+  background-image: url(assets/rain.png);
+  animation: rain 1800ms linear infinite;
+  opacity: 0;
+}
+
+#warning {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  animation: warning 1000ms both 5;
+  background: radial-gradient(transparent 65%, red);
+  opacity: 0;
+}
+
+@keyframes warning {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: .5;
+  }
+}
+    

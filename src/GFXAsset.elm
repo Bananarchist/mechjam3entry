@@ -1,4 +1,4 @@
-module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight, distantBg, crashingWaveSprite)
+module GFXAsset exposing (bg, viewSprite, mechStandSprite, mechPickUpSprite, mechHoldingSprite, segmentSprite, frontTide, backTide, waveSprite, lemmingSprite, fadeInText, withSendMessageBtn, bgWidth, bgHeight, distantBg, crashingWaveSprite, rain, warning)
 
 import Basics.Extra exposing (flip, uncurry)
 import Dict
@@ -151,13 +151,13 @@ mechPickUpBox = Box (684, 743) (113, 178)
 mechHoldingBox = Box (805, 743) (77, 178)
 
 mechStandSprite leftFacing xDistance = 
-    [ viewSprite mechArmLeftStillBox [Translated (xDistance+2, 225), Mirrored (if leftFacing then Horizontally else Neither ), Rotated 90 ]
+    viewSprite mechStandBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
+    {-[ viewSprite mechArmLeftStillBox [Translated (xDistance+2, 225), Mirrored (if leftFacing then Horizontally else Neither ), Rotated 90 ]
     , viewSprite mechLegLeftStraight [Translated (xDistance+7, 286), Mirrored (if leftFacing then Horizontally else Neither )]
     , viewSprite mechTorsoStraight [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither )]
     , viewSprite mechLegRightStraight [Translated (xDistance+7, 286), Mirrored (if leftFacing then Horizontally else Neither )]
     , viewSprite mechArmRightStillBox [Translated (xDistance+2, 225), Mirrored (if leftFacing then Horizontally else Neither ), Rotated 90 ]
-    ]
-    --viewSprite mechStandBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
+    ]-}
 
 mechPickUpSprite leftFacing xDistance =
     viewSprite mechPickUpBox [Translated (xDistance, 200), Mirrored (if leftFacing then Horizontally else Neither)]
@@ -216,3 +216,9 @@ frontTide level =
           ]
         )
       []
+
+rain =
+  Html.div [ Hats.id "rain" ] []
+
+warning =
+  Html.div [ Hats.id "warning" ] []

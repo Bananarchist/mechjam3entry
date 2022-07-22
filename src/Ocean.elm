@@ -1,4 +1,4 @@
-module Ocean exposing (Tide, Wave, update, newTide, newWave, highTide, tidalValue, viewFrontTide, viewBackTide, viewComingWave, viewCrashingWave, waveValue, new, Ocean, waveSurfaceDangerZone, isWaveCrashing, waveBridgeDangerZone, tidalDangerZone, oceanWave)
+module Ocean exposing (Tide, Wave, update, newTide, newWave, highTide, tidalValue, viewFrontTide, viewBackTide, viewComingWave, viewCrashingWave, waveValue, new, Ocean, waveSurfaceDangerZone, isWaveCrashing, waveBridgeDangerZone, tidalDangerZone, oceanWave, oceanTide)
 
 import Basics.Extra exposing (flip, uncurry)
 import GFXAsset

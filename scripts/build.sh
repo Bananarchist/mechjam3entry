@@ -38,5 +38,5 @@ fi
 
 if $dist; then
 	echo "Compressing client for distribution"
-	zip -r client.zip $js_out
+	zip -r client.zip $output_dir
 fi

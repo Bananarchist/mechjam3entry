@@ -239,8 +239,8 @@ runSpeed lemming =
   impulse lemming
     |> Maybe.map (\i ->
       case i of
-        FleeStorm -> 4
-        FleeWave -> if xPos lemming > 300 then 4 else -4
+        FleeStorm -> 3.5
+        FleeWave -> if xPos lemming > 300 then 3.5 else -3.5
         _ -> 0
     )
   |> flip Maybe.Extra.andMap (Maybe.map (*) speedAttr)

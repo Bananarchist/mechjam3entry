@@ -9,7 +9,7 @@ import Html.Attributes as Hats
 import Key
 import Lemmings
 import Mech
-import Message
+import Misc
 import Ocean
 import Sound
 import Time
@@ -55,6 +55,18 @@ applyRandomValuesTo state =
   , lemmingRandomValues = remaining
   }
 
+getMusicForGame game =
+  case (gamePhase game, gameState game) of
+    (Transition x Introduction Play, _) ->
+      updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Intro, s.lastTick) }) game
+    (Transition x Play (Ending (CompleteVictory _)), _) -> 
+      updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Outro, s.lastTick) }) game
+    (Play, {ocean}) ->
+      if (Ocean.oceanTide ocean |> Ocean.tidalValue) < 50 then
+        updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Light, s.lastTick) }) game
+      else
+        updateState (\s -> {s | audio = Just (Sound.MusicLoop Sound.Frantic, s.lastTick) }) game
+    _ -> game
 
 type Phase
   = Introduction
@@ -71,9 +83,6 @@ type GameResult
 type AudioSignal 
   = StartMusic
   | PauseMusic
-
-startMusic state = 
-  { state | audio = Just (Sound.Music, state.lastTick) }
 
 type Score = Score Float
 
@@ -164,16 +173,17 @@ gameResult game =
       phase = gamePhase game
       ({mech, bridge, lastTick, score, ocean, lemmings} as state) = gameState game
       maybeDebugger = gameDebugger game
+      realScore = List.length (List.filter Lemmings.isAlive lemmings) |> toFloat |> min 1 |> Score
   in
   case phase of
     Play -> 
       if Bridge.complete bridge && (not <| Lemmings.anyLeftToRescue lemmings) then
         if Mech.xPos mech >= 400 then
-          Just (CompleteVictory score) |> Debug.log "Complete victory"
+          Just (CompleteVictory realScore) |> Debug.log "Complete victory"
         else
-          Just (SavedPeople score)|> Debug.log "saved people"
+          Just (SavedPeople realScore)|> Debug.log "saved people"
       else if Ocean.highTide ocean then
-        Just (Died score)|> Debug.log "high tide"
+        Just (Died realScore)|> Debug.log "high tide"
       else if Mech.hasDrowned mech then
         Just (Died (Score 1))|> Debug.log "has drowned"
       else if Mech.hasBeenStruck mech then
@@ -197,7 +207,7 @@ updateIfGameOver game =
 finishedWithIntro game =
   case game of
     Paused g -> finishedWithIntro g
-    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) (s |> startMusic) dbg
+    Game c Introduction s dbg -> Game c (Transition 4500 Introduction Play) s dbg |> getMusicForGame
     _ -> game
 
 
@@ -228,17 +238,15 @@ update msg game =
       |> withNone
     (StartGame, _) ->
       finishedWithIntro game
-      |> Debug.log "Started state"
       |> withNone
     (NewGame conf tick lvals, _) ->
       newGameWithLemmings (Lemmings.newPopulationWithRandomValues lvals) tick conf
       |> withNone
     (RestartGame, _) ->
       game
-      |> updateState (always (newState lastTick) >> startMusic)
-      |> Debug.log "restarted state"
+      |> updateState (always (newState lastTick))
+      |> getMusicForGame
       |> withNone
-      --Game config Play (newState lastTick |> startMusic) maybeDebugger
     (KeyUp _, False) -> 
       if (Mech.velocity mech) /= 0 then
         updateState (\s -> {s | mech = Mech.setVelocity 0 mech }) game
@@ -353,6 +361,11 @@ view game =
               (Ending r, transition "transition-fade")
           _ ->
             (gamePhase game, identity)
+      warningScreen =
+        if Ocean.oceanWave ocean |> Ocean.waveValue |> Misc.within 0 5 then
+          [ GFXAsset.warning ]
+        else 
+          []
   in
   case phase of
     Introduction -> 
@@ -393,8 +406,7 @@ view game =
           [ "Our only hope had been lost to the water."
           , "Of a hundred people who stood on the bridge that night, praying, pleading..."
           , "I alone survived."
-          , "I will take the details of my escape to the grave."
-          , "I'm so sorry, mum."
+          , "I pray not to revisit the details of my escape until Judgement Day."
           ]
           |> GFXAsset.fadeInText
           |> GFXAsset.withSendMessageBtn (RestartGame) "Try Again"
@@ -412,6 +424,8 @@ view game =
       ++ Mech.view mech
       ++ Ocean.viewCrashingWave ocean
       ++ [ Ocean.viewFrontTide ocean ]
+      ++ [ GFXAsset.rain ]
+      ++ warningScreen
       ++ pauseOverlay
       |> withTransitionalView
 
